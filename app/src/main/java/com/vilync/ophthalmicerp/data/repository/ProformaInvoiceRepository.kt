@@ -1,0 +1,84 @@
+package com.vilync.ophthalmicerp.data.repository
+
+import com.vilync.ophthalmicerp.data.dao.ProformaInvoiceDao
+import com.vilync.ophthalmicerp.data.entity.ProformaInvoiceEntity
+import com.vilync.ophthalmicerp.data.entity.ProformaInvoiceItemEntity
+import kotlinx.coroutines.flow.Flow
+
+class ProformaInvoiceRepository(
+    private val proformaDao: ProformaInvoiceDao
+) {
+
+    suspend fun insertProformaInvoice(
+        proforma: ProformaInvoiceEntity
+    ): Long {
+        return proformaDao.insertProformaInvoice(proforma)
+    }
+
+    suspend fun insertProformaItems(
+        items: List<ProformaInvoiceItemEntity>
+    ) {
+        if (items.isEmpty()) return
+        proformaDao.insertProformaItems(items)
+    }
+
+    suspend fun updateProformaInvoice(
+        proforma: ProformaInvoiceEntity
+    ) {
+        proformaDao.updateProformaInvoice(proforma)
+    }
+
+    suspend fun getProformaById(
+        proformaId: Long
+    ): ProformaInvoiceEntity? {
+        return proformaDao.getProformaById(proformaId)
+    }
+
+    fun getAllProformaInvoices(): Flow<List<ProformaInvoiceEntity>> {
+        return proformaDao.getAllProformaInvoices()
+    }
+
+    fun getProformaInvoicesByFinancialYear(
+        financialYearStart: Int
+    ): Flow<List<ProformaInvoiceEntity>> {
+        return proformaDao.getProformaInvoicesByFinancialYear(
+            financialYearStart
+        )
+    }
+
+    fun getProformaInvoicesForCustomer(
+        customerId: Long
+    ): Flow<List<ProformaInvoiceEntity>> {
+        return proformaDao.getProformaInvoicesForCustomer(customerId)
+    }
+
+    suspend fun getItemsByProformaId(
+        proformaId: Long
+    ): List<ProformaInvoiceItemEntity> {
+        return proformaDao.getItemsByProformaId(proformaId)
+    }
+
+    suspend fun proformaNumberExists(
+        normalizedProformaNumber: String,
+        financialYearStart: Int
+    ): Boolean {
+        return proformaDao.proformaNumberExists(
+            normalizedProformaNumber =
+                normalizedProformaNumber.trim(),
+            financialYearStart =
+                financialYearStart
+        )
+    }
+
+    suspend fun markConvertedToSale(
+        proformaId: Long,
+        saleId: Long,
+        convertedAt: Long
+    ): Int {
+        return proformaDao.markConvertedToSale(
+            proformaId = proformaId,
+            saleId = saleId,
+            convertedAt = convertedAt
+        )
+    }
+}
