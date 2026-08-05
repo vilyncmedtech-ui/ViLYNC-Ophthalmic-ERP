@@ -1139,4 +1139,8 @@ class PartyMasterViewModel(
                 gstinLookupMessage = null
             )
     }
+
+    fun startNewParty() {
+        _uiState.value = PartyMasterUiState()
+    }
 }

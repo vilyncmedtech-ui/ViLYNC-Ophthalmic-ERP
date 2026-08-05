@@ -1,6 +1,7 @@
 package com.vilync.ophthalmicerp.data.repository
 
 import com.vilync.ophthalmicerp.data.dao.StockMovementDao
+import com.vilync.ophthalmicerp.data.dao.StockMovementRegisterRow
 import com.vilync.ophthalmicerp.data.entity.StockMovementEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -13,6 +14,20 @@ class StockMovementRepository(
         movement: StockMovementEntity
     ): Long {
         return stockMovementDao.insertMovement(movement)
+    }
+
+    suspend fun getMovementRegister(
+        startDate: String,
+        endDate: String,
+        movementType: String = "All",
+        partyName: String? = null,
+        serialNumber: String? = null,
+        productId: Long? = null,
+        power: String? = null
+    ): List<StockMovementRegisterRow> {
+        return stockMovementDao.getMovementRegisterRows(
+            startDate, endDate, movementType, partyName, serialNumber, productId, power
+        )
     }
 
 
@@ -49,5 +64,11 @@ class StockMovementRepository(
     // Get complete stock movement history
     fun getAllMovements(): Flow<List<StockMovementEntity>> {
         return stockMovementDao.getAllMovements()
+    }
+
+    suspend fun countDownstreamMovements(
+        inventoryUnitId: Long
+    ): Int {
+        return stockMovementDao.countDownstreamMovements(inventoryUnitId)
     }
 }

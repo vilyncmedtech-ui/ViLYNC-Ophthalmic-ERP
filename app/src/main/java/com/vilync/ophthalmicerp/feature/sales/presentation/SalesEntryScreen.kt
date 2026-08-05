@@ -23,30 +23,46 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vilync.ophthalmicerp.data.entity.ProductEntity
 import com.vilync.ophthalmicerp.feature.master.party.model.PartyMaster
+import com.vilync.ophthalmicerp.ui.components.PartySearchField
 import java.util.Calendar
 import java.util.Locale
 
@@ -63,7 +80,8 @@ import java.util.Locale
 fun SalesEntryScreen(
     viewModel: SalesViewModel,
     onBack: () -> Unit = {},
-    onDashboard: () -> Unit = {}
+    onDashboard: () -> Unit = {},
+    onSavedToDetail: (Long) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -80,15 +98,10 @@ fun SalesEntryScreen(
 
     BackHandler { requestExit(onBack) }
 
-    LaunchedEffect(uiState.isSavedSuccessfully) {
-        if (uiState.isSavedSuccessfully) {
-            Toast.makeText(
-                context,
-                uiState.successMessage ?: "Sales Invoice saved successfully.",
-                Toast.LENGTH_LONG
-            ).show()
-            serialInput = ""
-            viewModel.clearMessage()
+    LaunchedEffect(uiState.isSavedSuccessfully, uiState.savedSaleId) {
+        if (uiState.isSavedSuccessfully && uiState.savedSaleId != null) {
+            onSavedToDetail(uiState.savedSaleId!!)
+            viewModel.consumeSaveSuccess()
         }
     }
 
@@ -367,13 +380,13 @@ fun SalesEntryScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
 
-                CustomerDropdown(
-                    selected = uiState.selectedCustomer,
-                    customers = uiState.customers,
-                    onSelected = {
-                        viewModel.selectCustomer(it.id)
-                    },
-                    modifier = Modifier.weight(2.2f)
+                PartySearchField(
+                    label = "Customer / Hospital *",
+                    selectedParty = uiState.selectedCustomer,
+                    allParties = uiState.customers,
+                    onPartySelected = { viewModel.selectCustomer(it) },
+                    modifier = Modifier.weight(2.2f),
+                    readOnly = uiState.isEditMode
                 )
 
                 Row(
@@ -392,13 +405,8 @@ fun SalesEntryScreen(
                     )
                 }
 
-                CompactField(
-                    value = uiState.invoiceNumber,
-                    onValueChange = {
-                        viewModel.updateInvoiceNumber(
-                            it.uppercase(Locale.getDefault())
-                        )
-                    },
+                ReadOnlyField(
+                    value = if (uiState.isEditMode) uiState.invoiceNumber else "Auto-generated",
                     label = "Invoice No. *",
                     modifier = Modifier.weight(1.15f)
                 )
@@ -1072,47 +1080,6 @@ private fun SectionCard(
         ) {
             Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = VilyncNavy)
             content()
-        }
-    }
-}
-
-@Composable
-private fun CustomerDropdown(
-    selected: PartyMaster?,
-    customers: List<PartyMaster>,
-    onSelected: (PartyMaster) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(9.dp)
-        ) {
-            Text(
-                selected?.partyName ?: "Customer / Hospital *",
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                fontSize = 12.sp
-            )
-            Text("▼", fontSize = 10.sp)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            customers.forEach { customer ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(customer.partyName, fontWeight = FontWeight.SemiBold)
-                            if (customer.gstin.isNotBlank()) Text(customer.gstin, fontSize = 11.sp)
-                        }
-                    },
-                    onClick = {
-                        onSelected(customer)
-                        expanded = false
-                    }
-                )
-            }
         }
     }
 }

@@ -116,6 +116,21 @@ data class ProductMasterUiState(
 
 
     // =========================================================
+    // INVENTORY PLANNING
+    // =========================================================
+
+    val minimumStock: String = "0",
+
+    val reorderLevel: String = "0",
+
+    val maximumStock: String = "0",
+
+    val reorderQuantity: String = "0",
+
+    val leadTimeDays: String = "0",
+
+
+    // =========================================================
     // STATUS
     // =========================================================
 

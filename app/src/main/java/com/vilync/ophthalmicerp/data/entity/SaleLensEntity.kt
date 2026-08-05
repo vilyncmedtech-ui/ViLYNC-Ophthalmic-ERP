@@ -52,6 +52,18 @@ data class SaleLensEntity(
     val serialNumber: String,
 
     // =========================================================
+    // HISTORICAL COST & AUDIT SNAPSHOTS
+    // =========================================================
+
+    val purchasePriceSnapshot: Double = 0.0,
+    val purchaseGstAmountSnapshot: Double = 0.0,
+    val purchaseInvoiceId: Long? = null,
+    val purchaseInvoiceNumber: String = "",
+    val purchaseItemId: Long? = null,
+    val purchaseDate: String = "",
+    val costResolutionSource: String = "UNKNOWN",
+
+    // =========================================================
     // LENS TRACEABILITY SNAPSHOTS
     // =========================================================
 

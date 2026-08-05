@@ -9,6 +9,7 @@ import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import android.print.PrintManager
+import java.io.File
 import java.io.FileOutputStream
 
 data class ExportReport(
@@ -56,6 +57,17 @@ object ReportExportUtils {
             "\"${value.replace("\"", "\"\"")}\""
         })
         appendLine()
+    }
+
+    fun exportPdfToFile(context: Context, file: File, report: ExportReport) {
+        val document = createPdf(report)
+        try {
+            FileOutputStream(file).use { output ->
+                document.writeTo(output)
+            }
+        } finally {
+            document.close()
+        }
     }
 
     private fun createPdf(report: ExportReport): PdfDocument {

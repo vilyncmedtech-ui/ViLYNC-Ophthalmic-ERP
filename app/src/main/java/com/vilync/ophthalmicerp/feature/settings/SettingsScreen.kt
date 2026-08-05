@@ -186,10 +186,10 @@ fun SettingsScreen(
             SettingsOptionCard(
 
                 title =
-                    "Backup & Restore",
+                    "Cloud Backup",
 
                 description =
-                    "Create, verify and manage local ERP safety backups.",
+                    "Securely back up your ERP database to Google Drive and manage cloud sync.",
 
                 onClick =
                     onBackupRestoreClick

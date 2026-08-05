@@ -2,16 +2,20 @@ package com.vilync.ophthalmicerp.data.repository
 
 import com.vilync.ophthalmicerp.data.dao.PurchaseReturnDao
 import com.vilync.ophthalmicerp.data.dao.PurchaseReturnSerialSearchRow
+import com.vilync.ophthalmicerp.data.database.AppDatabase
 import com.vilync.ophthalmicerp.data.entity.PurchaseEntity
 import com.vilync.ophthalmicerp.data.entity.PurchaseItemEntity
 import com.vilync.ophthalmicerp.data.entity.PurchaseLensEntity
 import com.vilync.ophthalmicerp.data.entity.PurchaseReturnEntity
 import com.vilync.ophthalmicerp.data.entity.PurchaseReturnItemEntity
 import com.vilync.ophthalmicerp.data.entity.PurchaseReturnLensEntity
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 
 class PurchaseReturnRepository(
-    private val purchaseReturnDao: PurchaseReturnDao
+    private val purchaseReturnDao: PurchaseReturnDao,
+    private val database: AppDatabase? = null,
+    private val numberingRepository: DocumentNumberingRepository? = null
 ) {
 
     // =========================================================
@@ -22,28 +26,60 @@ class PurchaseReturnRepository(
         purchaseReturn: PurchaseReturnEntity,
         itemsWithLenses: List<Pair<PurchaseReturnItemEntity, List<PurchaseReturnLensEntity>>>
     ): Long {
-        return purchaseReturnDao.saveCompletePurchaseReturn(
-            purchaseReturn = purchaseReturn,
-            itemsWithLenses = itemsWithLenses
-        )
+        val db = database ?: throw IllegalStateException("AppDatabase is required for atomic save.")
+        
+        return db.withTransaction {
+            val finalDebitNoteNumber = numberingRepository?.getNextDocumentNumber(
+                DocumentType.DEBIT_NOTE,
+                purchaseReturn.financialYearStart
+            ) ?: purchaseReturn.creditNoteNumber.trim()
+
+            val returnId = purchaseReturnDao.insertPurchaseReturn(
+                purchaseReturn.copy(
+                    creditNoteNumber = finalDebitNoteNumber
+                )
+            )
+
+            itemsWithLenses.forEach { (item, lenses) ->
+                val itemId = purchaseReturnDao.insertPurchaseReturnItem(
+                    item.copy(purchaseReturnId = returnId)
+                )
+                if (lenses.isNotEmpty()) {
+                    purchaseReturnDao.insertPurchaseReturnLenses(
+                        lenses.map { it.copy(purchaseReturnItemId = itemId) }
+                    )
+                }
+            }
+            returnId
+        }
     }
 
     // =========================================================
-    // UPDATE / CORRECT COMPLETE PURCHASE RETURN
+    // UPDATE COMPLETE PURCHASE RETURN
     // =========================================================
 
     suspend fun updateCompletePurchaseReturn(
         purchaseReturn: PurchaseReturnEntity,
         itemsWithLenses: List<Pair<PurchaseReturnItemEntity, List<PurchaseReturnLensEntity>>>
     ) {
-        require(purchaseReturn.id > 0L) {
-            "Purchase Return ID is required for update."
-        }
+        val db = database ?: throw IllegalStateException("AppDatabase is required for atomic update.")
 
-        purchaseReturnDao.updateCompletePurchaseReturn(
-            purchaseReturn = purchaseReturn,
-            itemsWithLenses = itemsWithLenses
-        )
+        db.withTransaction {
+            purchaseReturnDao.updatePurchaseReturn(purchaseReturn)
+            purchaseReturnDao.deletePurchaseReturnLensesForReturn(purchaseReturn.id)
+            purchaseReturnDao.deletePurchaseReturnItemsForReturn(purchaseReturn.id)
+
+            itemsWithLenses.forEach { (item, lenses) ->
+                val itemId = purchaseReturnDao.insertPurchaseReturnItem(
+                    item.copy(purchaseReturnId = purchaseReturn.id)
+                )
+                if (lenses.isNotEmpty()) {
+                    purchaseReturnDao.insertPurchaseReturnLenses(
+                        lenses.map { it.copy(purchaseReturnItemId = itemId) }
+                    )
+                }
+            }
+        }
     }
 
     // =========================================================
@@ -58,54 +94,54 @@ class PurchaseReturnRepository(
         financialYearStart: Int
     ): Flow<List<PurchaseReturnEntity>> {
         return purchaseReturnDao.getPurchaseReturnsByFinancialYear(
-            financialYearStart = financialYearStart
+            financialYearStart
         )
     }
 
+
     // =========================================================
-    // PURCHASE RETURN BY ID / CANCEL
+    // PURCHASE RETURN BY ID
     // =========================================================
 
     suspend fun getPurchaseReturnById(
         purchaseReturnId: Long
     ): PurchaseReturnEntity? {
-        return purchaseReturnDao.getPurchaseReturnById(
-            purchaseReturnId = purchaseReturnId
-        )
+        return purchaseReturnDao.getPurchaseReturnById(purchaseReturnId)
     }
+
+
+    // =========================================================
+    // CANCEL
+    // =========================================================
 
     suspend fun cancelPostedPurchaseReturn(
         purchaseReturnId: Long,
-        reason: String
+        cancellationReason: String
     ): Boolean {
-        if (purchaseReturnId <= 0L || reason.trim().isBlank()) return false
-
         return purchaseReturnDao.cancelPostedPurchaseReturn(
             purchaseReturnId = purchaseReturnId,
-            reason = reason.trim(),
+            reason = cancellationReason.trim(),
             cancelledAt = System.currentTimeMillis()
         ) > 0
     }
 
+
     // =========================================================
-    // PURCHASE RETURN ITEMS / LENSES
+    // ITEMS / LENSES
     // =========================================================
 
     fun getPurchaseReturnItems(
         purchaseReturnId: Long
     ): Flow<List<PurchaseReturnItemEntity>> {
-        return purchaseReturnDao.getPurchaseReturnItems(
-            purchaseReturnId = purchaseReturnId
-        )
+        return purchaseReturnDao.getPurchaseReturnItems(purchaseReturnId)
     }
 
     fun getPurchaseReturnLenses(
         purchaseReturnItemId: Long
     ): Flow<List<PurchaseReturnLensEntity>> {
-        return purchaseReturnDao.getPurchaseReturnLenses(
-            purchaseReturnItemId = purchaseReturnItemId
-        )
+        return purchaseReturnDao.getPurchaseReturnLenses(purchaseReturnItemId)
     }
+
 
     // =========================================================
     // ORIGINAL PURCHASE
@@ -114,263 +150,190 @@ class PurchaseReturnRepository(
     suspend fun getOriginalPurchase(
         purchaseId: Long
     ): PurchaseEntity? {
-        return purchaseReturnDao.getOriginalPurchase(
-            purchaseId = purchaseId
-        )
+        return purchaseReturnDao.getOriginalPurchase(purchaseId)
     }
 
     suspend fun getOriginalPurchaseItems(
         purchaseId: Long
     ): List<PurchaseItemEntity> {
-        return purchaseReturnDao.getOriginalPurchaseItems(
-            purchaseId = purchaseId
-        )
+        return purchaseReturnDao.getOriginalPurchaseItems(purchaseId)
     }
 
     suspend fun getOriginalPurchaseItemById(
-        purchaseItemId: Long
+        originalPurchaseItemId: Long
     ): PurchaseItemEntity? {
-        return purchaseReturnDao.getOriginalPurchaseItemById(
-            purchaseItemId = purchaseItemId
-        )
+        return purchaseReturnDao.getOriginalPurchaseItemById(originalPurchaseItemId)
     }
 
     suspend fun getOriginalPurchaseLenses(
         purchaseItemId: Long
     ): List<PurchaseLensEntity> {
-        return purchaseReturnDao.getOriginalPurchaseLenses(
-            purchaseItemId = purchaseItemId
-        )
+        return purchaseReturnDao.getOriginalPurchaseLenses(purchaseItemId)
     }
 
+
     // =========================================================
-    // AVAILABLE PHYSICAL IOL LENSES
+    // AVAILABLE FOR RETURN
     // =========================================================
 
     suspend fun getAvailablePurchaseLensesForReturn(
         purchaseItemId: Long
     ): List<PurchaseLensEntity> {
-        return purchaseReturnDao.getAvailablePurchaseLensesForReturn(
-            purchaseItemId = purchaseItemId
-        )
+        return purchaseReturnDao.getAvailablePurchaseLensesForReturn(purchaseItemId)
     }
 
-    /**
-     * Edit-mode variant.
-     *
-     * The Purchase Return currently being corrected is excluded, so its
-     * own previously selected lenses remain available for selection.
-     */
     suspend fun getAvailablePurchaseLensesForReturn(
         purchaseItemId: Long,
         excludePurchaseReturnId: Long
     ): List<PurchaseLensEntity> {
-        if (excludePurchaseReturnId <= 0L) {
-            return getAvailablePurchaseLensesForReturn(
-                purchaseItemId = purchaseItemId
-            )
-        }
 
-        return purchaseReturnDao
-            .getAvailablePurchaseLensesForReturnExcludingReturn(
-                purchaseItemId = purchaseItemId,
-                excludePurchaseReturnId = excludePurchaseReturnId
-            )
+        return purchaseReturnDao.getAvailablePurchaseLensesForReturnExcludingReturn(
+            purchaseItemId = purchaseItemId,
+            excludePurchaseReturnId = excludePurchaseReturnId
+        )
     }
 
+
     // =========================================================
-    // CHECK EXACT PHYSICAL IOL
+    // ALREADY RETURNED?
     // =========================================================
 
     suspend fun isPurchaseLensAlreadyReturned(
         originalPurchaseLensId: Long
     ): Boolean {
-        return purchaseReturnDao.isPurchaseLensAlreadyReturned(
-            originalPurchaseLensId = originalPurchaseLensId
-        )
+        return purchaseReturnDao.isPurchaseLensAlreadyReturned(originalPurchaseLensId)
     }
 
-    /**
-     * Edit-mode variant. Ignores the return currently being corrected.
-     */
     suspend fun isPurchaseLensAlreadyReturned(
         originalPurchaseLensId: Long,
         excludePurchaseReturnId: Long
     ): Boolean {
-        if (excludePurchaseReturnId <= 0L) {
-            return isPurchaseLensAlreadyReturned(
-                originalPurchaseLensId = originalPurchaseLensId
-            )
-        }
-
-        return purchaseReturnDao
-            .isPurchaseLensAlreadyReturnedExcludingReturn(
-                originalPurchaseLensId = originalPurchaseLensId,
-                excludePurchaseReturnId = excludePurchaseReturnId
-            )
+        return purchaseReturnDao.isPurchaseLensAlreadyReturnedExcludingReturn(
+            originalPurchaseLensId = originalPurchaseLensId,
+            excludePurchaseReturnId = excludePurchaseReturnId
+        )
     }
 
+
     // =========================================================
-    // ALREADY RETURNED / REMAINING QUANTITY
+    // QUANTITY ALREADY RETURNED
     // =========================================================
 
     suspend fun getAlreadyReturnedQuantity(
         originalPurchaseItemId: Long
     ): Int {
-        return purchaseReturnDao.getAlreadyReturnedQuantity(
-            originalPurchaseItemId = originalPurchaseItemId
-        )
+        return purchaseReturnDao.getAlreadyReturnedQuantity(originalPurchaseItemId)
     }
 
-    /**
-     * Edit-mode variant. Excludes the current return from the total.
-     */
     suspend fun getAlreadyReturnedQuantity(
         originalPurchaseItemId: Long,
         excludePurchaseReturnId: Long
     ): Int {
-        if (excludePurchaseReturnId <= 0L) {
-            return getAlreadyReturnedQuantity(
-                originalPurchaseItemId = originalPurchaseItemId
-            )
-        }
-
-        return purchaseReturnDao
-            .getAlreadyReturnedQuantityExcludingReturn(
-                originalPurchaseItemId = originalPurchaseItemId,
-                excludePurchaseReturnId = excludePurchaseReturnId
-            )
+        return purchaseReturnDao.getAlreadyReturnedQuantityExcludingReturn(
+            originalPurchaseItemId = originalPurchaseItemId,
+            excludePurchaseReturnId = excludePurchaseReturnId
+        )
     }
+
+
+    // =========================================================
+    // REMAINING RETURNABLE QUANTITY
+    // =========================================================
 
     suspend fun getRemainingReturnableQuantity(
         originalPurchaseItemId: Long,
         originalPurchasedQuantity: Int
     ): Int {
-        val alreadyReturned = getAlreadyReturnedQuantity(
-            originalPurchaseItemId = originalPurchaseItemId
-        )
-
-        return (originalPurchasedQuantity - alreadyReturned)
-            .coerceAtLeast(0)
+        val returned = getAlreadyReturnedQuantity(originalPurchaseItemId)
+        return (originalPurchasedQuantity - returned).coerceAtLeast(0)
     }
 
-    /**
-     * Edit-mode remaining quantity.
-     *
-     * The current return's own old quantity is excluded, allowing the user
-     * to retain, reduce, or correct that quantity without false over-return
-     * validation.
-     */
     suspend fun getRemainingReturnableQuantity(
         originalPurchaseItemId: Long,
         originalPurchasedQuantity: Int,
         excludePurchaseReturnId: Long
     ): Int {
-        val alreadyReturned = getAlreadyReturnedQuantity(
-            originalPurchaseItemId = originalPurchaseItemId,
-            excludePurchaseReturnId = excludePurchaseReturnId
-        )
 
-        return (originalPurchasedQuantity - alreadyReturned)
+        val returnedOther =
+            getAlreadyReturnedQuantity(
+                originalPurchaseItemId =
+                    originalPurchaseItemId,
+                excludePurchaseReturnId =
+                    excludePurchaseReturnId
+            )
+
+        return (originalPurchasedQuantity - returnedOther)
             .coerceAtLeast(0)
     }
 
+
     // =========================================================
-    // DUPLICATE DEBIT / CREDIT NOTE CHECK
+    // DUPLICATE PROTECTION
     // =========================================================
 
     suspend fun creditNoteExists(
         supplierId: Long,
         creditNoteNumber: String
     ): Boolean {
-        val normalizedCreditNote = creditNoteNumber.trim()
-
-        if (supplierId <= 0L || normalizedCreditNote.isBlank()) {
-            return false
-        }
-
         return purchaseReturnDao.creditNoteExists(
             supplierId = supplierId,
-            creditNoteNumber = normalizedCreditNote
+            creditNoteNumber = creditNoteNumber.trim()
         )
     }
 
-    /**
-     * Edit-mode duplicate check.
-     *
-     * Allows the current Purchase Return to keep its own document number,
-     * but still blocks that Supplier + document number on another return.
-     */
     suspend fun creditNoteExists(
         supplierId: Long,
         creditNoteNumber: String,
         excludePurchaseReturnId: Long
     ): Boolean {
-        val normalizedCreditNote = creditNoteNumber.trim()
-
-        if (supplierId <= 0L || normalizedCreditNote.isBlank()) {
-            return false
-        }
-
-        if (excludePurchaseReturnId <= 0L) {
-            return creditNoteExists(
-                supplierId = supplierId,
-                creditNoteNumber = normalizedCreditNote
-            )
-        }
-
         return purchaseReturnDao.creditNoteExistsExcludingReturn(
             supplierId = supplierId,
-            creditNoteNumber = normalizedCreditNote,
+            creditNoteNumber = creditNoteNumber.trim(),
             excludePurchaseReturnId = excludePurchaseReturnId
         )
     }
 
+
     // =========================================================
-    // RETURNS AGAINST ORIGINAL PURCHASE
+    // BY PURCHASE
     // =========================================================
 
     fun getReturnsForPurchase(
         originalPurchaseId: Long
     ): Flow<List<PurchaseReturnEntity>> {
-        return purchaseReturnDao.getReturnsForPurchase(
-            originalPurchaseId = originalPurchaseId
-        )
+        return purchaseReturnDao.getReturnsForPurchase(originalPurchaseId)
     }
 
+
     // =========================================================
-    // RETURNS BY SUPPLIER
+    // BY SUPPLIER
     // =========================================================
 
     fun getPurchaseReturnsBySupplier(
         supplierId: Long
     ): Flow<List<PurchaseReturnEntity>> {
-        return purchaseReturnDao.getPurchaseReturnsBySupplier(
-            supplierId = supplierId
-        )
+        return purchaseReturnDao.getPurchaseReturnsBySupplier(supplierId)
     }
 
+
     // =========================================================
-    // SEARCH PURCHASE RETURNS
+    // SEARCH
     // =========================================================
 
     fun searchPurchaseReturns(
         query: String
     ): Flow<List<PurchaseReturnEntity>> {
-        return purchaseReturnDao.searchPurchaseReturns(
-            query = query.trim()
-        )
+        return purchaseReturnDao.searchPurchaseReturns(query.trim())
     }
 
+
     // =========================================================
-    // AVAILABLE IOL SERIAL SEARCH
+    // SERIAL SEARCH
     // =========================================================
 
     fun searchAvailableIolSerials(
         query: String
     ): Flow<List<PurchaseReturnSerialSearchRow>> {
-        return purchaseReturnDao.searchAvailableIolSerials(
-            query = query.trim()
-        )
+        return purchaseReturnDao.searchAvailableIolSerials(query.trim())
     }
 }

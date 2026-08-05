@@ -269,6 +269,8 @@ data class SalesUiState(
 
     val isSavedSuccessfully: Boolean = false,
 
+    val savedSaleId: Long? = null,
+
 
     // =========================================================
     // VALIDATION / MESSAGE

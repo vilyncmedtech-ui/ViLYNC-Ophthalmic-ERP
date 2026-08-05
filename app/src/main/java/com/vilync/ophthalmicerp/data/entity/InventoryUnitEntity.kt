@@ -41,6 +41,10 @@ data class InventoryUnitEntity(
     // Supplier purchase invoice reference
     val purchaseInvoiceNumber: String = "",
 
+    // Deterministic links to purchase origin
+    val purchaseId: Long? = null,
+    val purchaseItemId: Long? = null,
+
     // Current inventory status
     val status: String = "IN_STOCK"
 )

@@ -829,6 +829,46 @@ class ProductMasterViewModel(
 
 
     // =========================================================
+    // INVENTORY PLANNING
+    // =========================================================
+
+    fun updateMinimumStock(value: String) {
+        if (value.isBlank() || value.all { it.isDigit() }) {
+            _uiState.value = _uiState.value.copy(minimumStock = value, errorMessage = null)
+            _saveSuccess.value = false
+        }
+    }
+
+    fun updateReorderLevel(value: String) {
+        if (value.isBlank() || value.all { it.isDigit() }) {
+            _uiState.value = _uiState.value.copy(reorderLevel = value, errorMessage = null)
+            _saveSuccess.value = false
+        }
+    }
+
+    fun updateMaximumStock(value: String) {
+        if (value.isBlank() || value.all { it.isDigit() }) {
+            _uiState.value = _uiState.value.copy(maximumStock = value, errorMessage = null)
+            _saveSuccess.value = false
+        }
+    }
+
+    fun updateReorderQuantity(value: String) {
+        if (value.isBlank() || value.all { it.isDigit() }) {
+            _uiState.value = _uiState.value.copy(reorderQuantity = value, errorMessage = null)
+            _saveSuccess.value = false
+        }
+    }
+
+    fun updateLeadTimeDays(value: String) {
+        if (value.isBlank() || value.all { it.isDigit() }) {
+            _uiState.value = _uiState.value.copy(leadTimeDays = value, errorMessage = null)
+            _saveSuccess.value = false
+        }
+    }
+
+
+    // =========================================================
     // ACTIVE
     // =========================================================
 
@@ -987,6 +1027,12 @@ class ProductMasterViewModel(
 
                         serialPrefix =
                             product.serialPrefix,
+
+                        minimumStock = product.minimumStock.toString(),
+                        reorderLevel = product.reorderLevel.toString(),
+                        maximumStock = product.maximumStock.toString(),
+                        reorderQuantity = product.reorderQuantity.toString(),
+                        leadTimeDays = product.leadTimeDays.toString(),
 
                         isActive =
                             product.isActive,
@@ -1155,6 +1201,9 @@ class ProductMasterViewModel(
         }
 
 
+        val safetyStock = 0
+
+
         if (
             state.serialNumberRequired &&
             state.serialPrefix.isBlank()
@@ -1167,6 +1216,29 @@ class ProductMasterViewModel(
             return false
         }
 
+        // =====================================================
+        // INVENTORY PLANNING VALIDATION
+        // =====================================================
+
+        val min = state.minimumStock.toIntOrNull() ?: 0
+        val reorder = state.reorderLevel.toIntOrNull() ?: 0
+        val max = state.maximumStock.toIntOrNull() ?: 0
+        val leadTime = state.leadTimeDays.toIntOrNull() ?: 0
+
+        if (reorder < min) {
+            setError("Reorder Level cannot be less than Minimum Stock.")
+            return false
+        }
+
+        if (max < reorder && max > 0) {
+            setError("Maximum Stock cannot be less than Reorder Level.")
+            return false
+        }
+
+        if (leadTime < 0) {
+            setError("Lead Time cannot be negative.")
+            return false
+        }
 
         _uiState.value =
             _uiState.value.copy(
@@ -1266,6 +1338,12 @@ class ProductMasterViewModel(
 
             serialPrefix =
                 state.serialPrefix.trim().uppercase(),
+
+            minimumStock = state.minimumStock.toIntOrNull() ?: 0,
+            reorderLevel = state.reorderLevel.toIntOrNull() ?: 0,
+            maximumStock = state.maximumStock.toIntOrNull() ?: 0,
+            reorderQuantity = state.reorderQuantity.toIntOrNull() ?: 0,
+            leadTimeDays = state.leadTimeDays.toIntOrNull() ?: 0,
 
             isActive =
                 state.isActive

@@ -244,6 +244,17 @@ interface InventoryDao {
     )
 
 
+    @Query(
+        """
+        SELECT COUNT(*) FROM inventory_units
+        WHERE status = 'IN_STOCK'
+          AND expiryDate != ''
+          AND (substr(expiryDate, 7, 4) || '-' || substr(expiryDate, 4, 2) || '-' || substr(expiryDate, 1, 2)) <= :thresholdDate
+        """
+    )
+    suspend fun getExpiringSoonCount(thresholdDate: String): Int
+
+
     // =========================================================
     // SERIAL NUMBER EXISTS
     // =========================================================

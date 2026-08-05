@@ -667,6 +667,73 @@ fun ProductMasterScreen(
         }
 
 
+        // =====================================================
+        // INVENTORY PLANNING
+        // =====================================================
+
+        ProductSectionCard(
+            title = "INVENTORY PLANNING"
+        ) {
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+
+                ProductTextField(
+                    value = uiState.minimumStock,
+                    onValueChange = viewModel::updateMinimumStock,
+                    label = "Minimum Stock",
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSaving && !uiState.isLoadingProduct,
+                    keyboardType = KeyboardType.Number
+                )
+
+                ProductTextField(
+                    value = uiState.reorderLevel,
+                    onValueChange = viewModel::updateReorderLevel,
+                    label = "Reorder Level",
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSaving && !uiState.isLoadingProduct,
+                    keyboardType = KeyboardType.Number
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+
+                ProductTextField(
+                    value = uiState.maximumStock,
+                    onValueChange = viewModel::updateMaximumStock,
+                    label = "Maximum Stock",
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSaving && !uiState.isLoadingProduct,
+                    keyboardType = KeyboardType.Number
+                )
+
+                ProductTextField(
+                    value = uiState.reorderQuantity,
+                    onValueChange = viewModel::updateReorderQuantity,
+                    label = "Reorder Quantity",
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSaving && !uiState.isLoadingProduct,
+                    keyboardType = KeyboardType.Number
+                )
+            }
+
+            ProductTextField(
+                value = uiState.leadTimeDays,
+                onValueChange = viewModel::updateLeadTimeDays,
+                label = "Lead Time (Days)",
+                modifier = Modifier.fillMaxWidth(0.5f),
+                enabled = !isSaving && !uiState.isLoadingProduct,
+                keyboardType = KeyboardType.Number
+            )
+        }
+
+
         if (uiState.serialNumberRequired) {
 
             OutlinedTextField(

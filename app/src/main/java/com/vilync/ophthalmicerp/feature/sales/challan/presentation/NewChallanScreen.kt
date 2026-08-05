@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import com.vilync.ophthalmicerp.ui.components.PartySearchField
 import java.util.Calendar
 import java.util.Locale
 
@@ -50,7 +51,8 @@ private val ChallanSoftBlue = Color(0xFFEAF2FF)
 @Composable
 fun NewChallanScreen(
     viewModel: NewChallanViewModel,
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    onSavedToDetail: (Long) -> Unit = {}
 ) {
 
     val state by
@@ -59,9 +61,11 @@ fun NewChallanScreen(
     val context =
         LocalContext.current
 
-    var customerExpanded by
-    remember {
-        mutableStateOf(false)
+    androidx.compose.runtime.LaunchedEffect(state.savedChallanId) {
+        if (state.savedChallanId != null) {
+            onSavedToDetail(state.savedChallanId!!)
+            viewModel.clearMessages()
+        }
     }
 
     val calendar =
@@ -155,56 +159,13 @@ fun NewChallanScreen(
                     color = ChallanNavy
                 )
 
-                Box {
-
-                    OutlinedTextField(
-                        value =
-                            state.selectedCustomer
-                                ?.partyName
-                                .orEmpty(),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = {
-                            Text(
-                                "Customer / Hospital *"
-                            )
-                        },
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    customerExpanded = true
-                                }
-                    )
-
-                    DropdownMenu(
-                        expanded =
-                            customerExpanded,
-                        onDismissRequest = {
-                            customerExpanded = false
-                        }
-                    ) {
-
-                        state.customers
-                            .forEach { customer ->
-
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            customer.partyName
-                                        )
-                                    },
-                                    onClick = {
-                                        viewModel
-                                            .selectCustomer(
-                                                customer
-                                            )
-                                        customerExpanded = false
-                                    }
-                                )
-                            }
-                    }
-                }
+                PartySearchField(
+                    label = "Customer / Hospital *",
+                    selectedParty = state.selectedCustomer,
+                    allParties = state.customers,
+                    onPartySelected = { viewModel.selectCustomer(it) },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Row(
                     modifier =
@@ -214,10 +175,9 @@ fun NewChallanScreen(
                 ) {
 
                     OutlinedTextField(
-                        value =
-                            state.challanNumber,
-                        onValueChange =
-                            viewModel::updateChallanNumber,
+                        value = "Auto-generated",
+                        onValueChange = {},
+                        readOnly = true,
                         label = {
                             Text("Challan No. *")
                         },

@@ -28,6 +28,12 @@ val gstApiKey =
         ""
     )
 
+val googleWebClientId =
+    localProperties.getProperty(
+        "GOOGLE_WEB_CLIENT_ID",
+        ""
+    )
+
 
 android {
 
@@ -58,6 +64,12 @@ android {
             "String",
             "GST_API_KEY",
             "\"${gstApiKey.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
+
+        buildConfigField(
+            "String",
+            "GOOGLE_WEB_CLIENT_ID",
+            "\"${googleWebClientId.replace("\\", "\\\\").replace("\"", "\\\"")}\""
         )
     }
 
@@ -90,6 +102,16 @@ android {
         // Required for BuildConfig.GST_API_KEY
         buildConfig = true
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/LICENSE"
+            excludes += "/META-INF/NOTICE"
+            excludes += "/META-INF/LICENSE.txt"
+            excludes += "/META-INF/NOTICE.txt"
+        }
+    }
 }
 
 
@@ -107,6 +129,14 @@ dependencies {
 
     implementation(
         libs.androidx.compose.material3
+    )
+
+    implementation(
+        libs.androidx.compose.material.icons.core
+    )
+
+    implementation(
+        libs.androidx.compose.material.icons.extended
     )
 
     implementation(
@@ -148,6 +178,49 @@ dependencies {
 
     ksp(
         libs.androidx.room.compiler
+    )
+
+
+    // =========================================================
+    // GOOGLE IDENTITY / CREDENTIALS
+    // =========================================================
+
+    implementation(
+        libs.androidx.identity.credentials
+    )
+
+    implementation(
+        libs.androidx.identity.play
+    )
+
+    implementation(
+        libs.google.identity.googleid
+    )
+
+
+    // =========================================================
+    // GOOGLE DRIVE API
+    // =========================================================
+
+    implementation(
+        libs.google.drive.services
+    )
+
+    implementation(
+        libs.google.drive.client
+    )
+
+    implementation(
+        libs.google.drive.http
+    )
+
+
+    // =========================================================
+    // WORK MANAGER
+    // =========================================================
+
+    implementation(
+        libs.androidx.work.runtime
     )
 
 

@@ -8,13 +8,18 @@ import com.vilync.ophthalmicerp.data.entity.SaleItemEntity
 import com.vilync.ophthalmicerp.data.entity.SaleLensEntity
 import com.vilync.ophthalmicerp.data.entity.StockMovementEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 
 class SalesRepository(
 
     private val salesDao: SalesDao,
 
-    private val database: AppDatabase
+    private val database: AppDatabase,
+
+    private val auditTrailRepository: AuditTrailRepository,
+
+    private val numberingRepository: DocumentNumberingRepository? = null
 
 ) {
 
@@ -125,7 +130,7 @@ class SalesRepository(
         }
 
         require(
-            sale.invoiceNumber.trim().isNotBlank()
+            sale.invoiceNumber.trim().isNotBlank() || numberingRepository != null
         ) {
             "Sales Invoice Number is required."
         }
@@ -406,6 +411,12 @@ class SalesRepository(
             // SAVE SALES DOCUMENT
             // =================================================
 
+            val finalInvoiceNumber =
+                numberingRepository?.getNextDocumentNumber(
+                    DocumentType.INVOICE,
+                    sale.financialYearStart
+                ) ?: sale.invoiceNumber.trim()
+
             val saleId =
                 salesDao.saveCompleteSaleDocument(
                     sale =
@@ -416,11 +427,10 @@ class SalesRepository(
                                 sale.customerName.trim(),
 
                             invoiceNumber =
-                                sale.invoiceNumber.trim(),
+                                finalInvoiceNumber,
 
                             normalizedInvoiceNumber =
-                                sale.invoiceNumber
-                                    .trim()
+                                finalInvoiceNumber
                                     .uppercase(),
 
                             invoiceDate =
@@ -463,6 +473,48 @@ class SalesRepository(
                                     item.lotNumber.trim()
                             ) to
                                     lenses.map { lens ->
+                                        // -----------------------------------------------------
+                                        // RESOLVE HISTORICAL COST SNAPSHOT
+                                        // -----------------------------------------------------
+                                        val unit = inventoryDao.getById(lens.inventoryUnitId)
+                                        var cost = 0.0
+                                        var gst = 0.0
+                                        var pInvoiceId: Long? = null
+                                        var pItemId: Long? = null
+                                        var pDate = ""
+                                        var pInvNo = ""
+                                        var source = "UNKNOWN"
+
+                                        if (unit != null) {
+                                            pInvNo = unit.purchaseInvoiceNumber
+                                            val purchaseItem = if (unit.purchaseItemId != null) {
+                                                database.purchaseDao().getPurchaseItems(unit.purchaseId ?: 0L).first().find { it.id == unit.purchaseItemId }
+                                            } else if (unit.purchaseInvoiceNumber.isNotBlank()) {
+                                                val purchase = database.purchaseDao().searchByInvoiceNumber(unit.purchaseInvoiceNumber).first().firstOrNull()
+                                                if (purchase != null) {
+                                                    database.purchaseDao().getPurchaseItems(purchase.id).first().find { 
+                                                        it.productId == item.productId && it.power == item.power 
+                                                    }
+                                                } else null
+                                            } else null
+
+                                            if (purchaseItem != null) {
+                                                cost = purchaseItem.purchaseRate
+                                                gst = purchaseItem.gstAmount / purchaseItem.quantity.toDouble()
+                                                pItemId = purchaseItem.id
+                                                pInvoiceId = purchaseItem.purchaseId
+                                                source = "SNAPSHOT"
+                                                
+                                                val purchase = database.purchaseDao().getPurchaseById(purchaseItem.purchaseId)
+                                                pDate = purchase?.receivedDate ?: ""
+                                            } else {
+                                                // Fallback to Master if trace fails
+                                                val product = database.productDao().getProductById(item.productId)
+                                                cost = product?.purchasePrice ?: 0.0
+                                                gst = product?.purchaseGstAmount ?: 0.0
+                                                source = "MASTER_FALLBACK"
+                                            }
+                                        }
 
                                         lens.copy(
                                             id = 0L,
@@ -474,7 +526,14 @@ class SalesRepository(
                                             batchNumber =
                                                 lens.batchNumber.trim(),
                                             expiryDate =
-                                                lens.expiryDate.trim()
+                                                lens.expiryDate.trim(),
+                                            purchasePriceSnapshot = cost,
+                                            purchaseGstAmountSnapshot = gst,
+                                            purchaseInvoiceId = pInvoiceId,
+                                            purchaseInvoiceNumber = pInvNo,
+                                            purchaseItemId = pItemId,
+                                            purchaseDate = pDate,
+                                            costResolutionSource = source
                                         )
                                     }
                         }
@@ -1093,6 +1152,49 @@ class SalesRepository(
 
 
     // =========================================================
+    // SOFT DELETE DRAFT SALES INVOICE
+    // =========================================================
+
+    suspend fun softDeleteSale(
+        saleId: Long,
+        reason: String? = null
+    ) {
+
+        require(saleId > 0L) { "Valid Sales Invoice is required." }
+
+        database.withTransaction {
+
+            val sale = salesDao.getSaleById(saleId)
+                ?: throw IllegalStateException("Sales Invoice not found.")
+
+            require(sale.status.trim().equals("DRAFT", ignoreCase = true)) {
+                "Only DRAFT invoices can be deleted. Current status: ${sale.status}."
+            }
+
+            val updatedSale = sale.copy(
+                status = "DELETED",
+                updatedAt = System.currentTimeMillis()
+            )
+
+            salesDao.updateSale(updatedSale)
+
+            // Audit
+            try {
+                auditTrailRepository.recordEvent(
+                    module = "SALES",
+                    action = "SOFT_DELETE",
+                    recordId = saleId,
+                    referenceNumber = sale.invoiceNumber,
+                    description = "Draft Invoice ${sale.invoiceNumber} moved to Deleted. Reason: ${reason ?: "N/A"}",
+                    oldValue = "DRAFT",
+                    newValue = "DELETED"
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
+
+    // =========================================================
     // SALES REGISTER
     // =========================================================
 
@@ -1193,4 +1295,7 @@ class SalesRepository(
             customerId =
                 customerId
         )
+
+    suspend fun getTotalSaleAmountForCustomer(customerId: Long): Double =
+        salesDao.getTotalSaleAmountForCustomer(customerId) ?: 0.0
 }

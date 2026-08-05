@@ -540,6 +540,18 @@ interface PurchaseDao {
     ): Flow<List<PurchaseEntity>>
 
 
+    @Query(
+        """
+        SELECT * FROM purchases
+        WHERE (invoiceNumber LIKE '%' || :query || '%' OR supplierName LIKE '%' || :query || '%')
+        ORDER BY id DESC LIMIT 20
+        """
+    )
+    suspend fun searchPurchasesList(
+        query: String
+    ): List<PurchaseEntity>
+
+
     // =========================================================
     // PURCHASES BY SUPPLIER
     // =========================================================
@@ -554,4 +566,29 @@ interface PurchaseDao {
     fun getPurchasesBySupplier(
         supplierName: String
     ): Flow<List<PurchaseEntity>>
+
+    // =========================================================
+    // FINANCIAL AGGREGATION
+    // =========================================================
+
+    @Query("SELECT SUM(grandTotal) FROM purchases WHERE supplierId = :supplierId")
+    suspend fun getTotalPurchaseAmountForSupplier(supplierId: Long): Double?
+
+    // =========================================================
+    // PERIOD REPORTING QUERIES
+    // =========================================================
+
+    @Query("""
+        SELECT SUM(grandTotal) FROM purchases 
+        WHERE supplierId = :supplierId
+          AND (substr(invoiceDate, 7, 4) || '-' || substr(invoiceDate, 4, 2) || '-' || substr(invoiceDate, 1, 2)) < :startDate
+    """)
+    suspend fun getOpeningPurchasesTotal(supplierId: Long, startDate: String): Double?
+
+    @Query("""
+        SELECT * FROM purchases 
+        WHERE supplierId = :supplierId
+          AND (substr(invoiceDate, 7, 4) || '-' || substr(invoiceDate, 4, 2) || '-' || substr(invoiceDate, 1, 2)) BETWEEN :startDate AND :endDate
+    """)
+    suspend fun getPurchasesForPeriod(supplierId: Long, startDate: String, endDate: String): List<PurchaseEntity>
 }

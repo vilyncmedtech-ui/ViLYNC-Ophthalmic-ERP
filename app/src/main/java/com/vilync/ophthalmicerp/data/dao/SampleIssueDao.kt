@@ -189,6 +189,26 @@ interface SampleIssueDao {
         updatedAt: Long
     )
 
+    @Query("SELECT COUNT(*) FROM sample_issues WHERE status = 'ISSUED'")
+    fun observePendingSampleCount(): Flow<Int>
+
+    @Query(
+        """
+        SELECT * FROM sample_issues 
+        WHERE (sampleIssueNumber LIKE '%' || :query || '%' OR customerName LIKE '%' || :query || '%')
+          AND status != 'CANCELLED'
+        ORDER BY id DESC LIMIT 20
+        """
+    )
+    suspend fun searchSamples(query: String): List<SampleIssueEntity>
+
+
+    @Query("DELETE FROM sample_issue_items WHERE sampleIssueId = :sampleIssueId")
+    suspend fun deleteItemsBySampleIssueId(sampleIssueId: Long)
+
+    @Query("SELECT * FROM sample_issue_items WHERE sampleIssueId = :sampleIssueId")
+    suspend fun getItemsBySampleIssueIdList(sampleIssueId: Long): List<SampleIssueItemEntity>
+
     // =========================================================
     // DUPLICATE NUMBER PROTECTION
     // =========================================================

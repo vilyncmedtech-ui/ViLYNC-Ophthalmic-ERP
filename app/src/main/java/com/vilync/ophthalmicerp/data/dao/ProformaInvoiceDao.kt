@@ -91,6 +91,18 @@ interface ProformaInvoiceDao {
         proformaId: Long
     ): List<ProformaInvoiceItemEntity>
 
+
+    @Query(
+        """
+        SELECT * FROM proforma_invoices 
+        WHERE (proformaNumber LIKE '%' || :query || '%' OR customerName LIKE '%' || :query || '%')
+          AND status != 'CANCELLED'
+        ORDER BY id DESC LIMIT 20
+        """
+    )
+    suspend fun searchProforma(query: String): List<ProformaInvoiceEntity>
+
+
     // =========================================================
     // DUPLICATE NUMBER PROTECTION
     // =========================================================
@@ -109,6 +121,9 @@ interface ProformaInvoiceDao {
         normalizedProformaNumber: String,
         financialYearStart: Int
     ): Boolean
+
+    @Query("DELETE FROM proforma_invoice_items WHERE proformaInvoiceId = :proformaId")
+    suspend fun deleteItemsByProformaId(proformaId: Long)
 
     // =========================================================
     // CONVERSION TO FINAL SALES INVOICE

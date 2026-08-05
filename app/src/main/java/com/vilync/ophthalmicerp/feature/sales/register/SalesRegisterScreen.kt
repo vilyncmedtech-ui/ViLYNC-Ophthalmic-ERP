@@ -1,585 +1,645 @@
 package com.vilync.ophthalmicerp.feature.sales.register
 
-import android.widget.Toast
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import android.content.Context
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import java.text.NumberFormat
-import java.util.Locale
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 
-private val Navy = Color(0xFF071B33)
-private val Gold = Color(0xFFD4AF37)
-private val Page = Color(0xFFF7F9FC)
-
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SalesRegisterScreen(
     viewModel: SalesRegisterViewModel,
     onBack: () -> Unit,
     onDashboard: () -> Unit,
-    onViewInvoice: (Long) -> Unit = {},
-    onEditInvoice: (Long) -> Unit = {}
+    onNewDocument: () -> Unit,
+    onViewDetail: (Long) -> Unit,
+    onEditInvoice: ((Long) -> Unit)? = null
 ) {
-    val state = viewModel.uiState.collectAsState().value
-    val actionMessage = viewModel.actionMessage.collectAsState().value
-    val isActionRunning = viewModel.isActionRunning.collectAsState().value
-
+    val uiState by viewModel.uiState.collectAsState()
+    val filterOptions by viewModel.filterOptions.collectAsState()
     val context = LocalContext.current
-    var exportOpen by remember { mutableStateOf(false) }
-    var selectedRow by remember { mutableStateOf<SalesRegisterRow?>(null) }
-    var showRowActions by remember { mutableStateOf(false) }
-    var showCancelDialog by remember { mutableStateOf(false) }
-    var cancellationReason by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    val money = remember {
-        NumberFormat.getCurrencyInstance(
-            Locale("en", "IN")
-        )
-    }
-
-    LaunchedEffect(actionMessage) {
-        actionMessage?.let { message ->
-            Toast.makeText(
-                context,
-                message,
-                Toast.LENGTH_LONG
-            ).show()
-
+    // Show action messages as Snackbar
+    LaunchedEffect(uiState.actionMessage) {
+        uiState.actionMessage?.let { message ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = "Dismiss",
+                duration = SnackbarDuration.Short
+            )
             viewModel.clearActionMessage()
         }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-
-        Row(
-            Modifier.fillMaxWidth(),
-            Arrangement.SpaceBetween,
-            Alignment.CenterVertically
-        ) {
-            OutlinedButton(
-                onClick = onBack
-            ) {
-                Text("← Back")
-            }
-
-            Text(
-                viewModel.registerType.screenTitle,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = Navy
-            )
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box {
-                    Button(
-                        onClick = {
-                            exportOpen = true
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Navy
-                        )
-                    ) {
-                        Text("EXPORT ▾")
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(viewModel.registerType.displayName) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
-
-                    DropdownMenu(
-                        expanded = exportOpen,
-                        onDismissRequest = {
-                            exportOpen = false
-                        }
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Text("Print")
-                            },
-                            onClick = {
-                                exportOpen = false
-
-                                SalesRegisterExportSuite
-                                    .print(
-                                        context,
-                                        viewModel.registerType.screenTitle,
-                                        state.rows
-                                    )
-                                    .onFailure {
-                                        Toast.makeText(
-                                            context,
-                                            it.message ?: "Unable to print.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    }
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = {
-                                Text("PDF")
-                            },
-                            onClick = {
-                                exportOpen = false
-
-                                SalesRegisterExportSuite
-                                    .exportPdfAndShare(
-                                        context,
-                                        viewModel.registerType.screenTitle,
-                                        state.rows
-                                    )
-                                    .onFailure {
-                                        Toast.makeText(
-                                            context,
-                                            it.message ?: "Unable to export PDF.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    }
-                            }
-                        )
-
-                        DropdownMenuItem(
-                            text = {
-                                Text("Excel")
-                            },
-                            onClick = {
-                                exportOpen = false
-
-                                SalesRegisterExportSuite
-                                    .exportExcelAndShare(
-                                        context,
-                                        viewModel.registerType.screenTitle,
-                                        state.rows
-                                    )
-                                    .onFailure {
-                                        Toast.makeText(
-                                            context,
-                                            it.message ?: "Unable to export Excel.",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    }
-                            }
-                        )
-                    }
-                }
-
-                OutlinedButton(
-                    onClick = onDashboard
-                ) {
-                    Text("⌂ Dashboard")
-                }
-            }
-        }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OutlinedTextField(
-                value = state.query,
-                onValueChange = viewModel::updateQuery,
-                label = {
-                    Text("Search document / customer / date / status")
                 },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(0.82f)
+                actions = {
+                    // Search
+                    IconButton(onClick = { /* TODO: Show search */ }) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                    // Filter
+                    IconButton(onClick = { /* TODO: Show filter dialog */ }) {
+                        Icon(Icons.Default.FilterList, contentDescription = "Filter")
+                    }
+                    // Export
+                    IconButton(onClick = {
+                        viewModel.update { it.copy(showExportDialog = true) }
+                    }) {
+                        Icon(Icons.Default.Download, contentDescription = "Export")
+                    }
+                    // Refresh
+                    IconButton(onClick = { viewModel.refresh() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    }
+                    // Dashboard
+                    IconButton(onClick = onDashboard) {
+                        Icon(Icons.Default.Dashboard, contentDescription = "Dashboard")
+                    }
+                }
+            )
+        },
+        floatingActionButton = {
+            if (viewModel.registerType.isEditable) {
+                FloatingActionButton(
+                    onClick = onNewDocument
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "New")
+                }
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            // Search Bar
+            SearchBar(
+                query = uiState.query,
+                onQueryChange = viewModel::updateQuery,
+                onRefresh = viewModel::refresh
             )
 
-            OutlinedButton(
-                onClick = viewModel::refresh
-            ) {
-                Text("Refresh")
-            }
-        }
+            // Summary Row
+            SummaryRow(
+                totalAmount = uiState.totalAmount,
+                totalCount = uiState.count,
+                postedCount = uiState.postedCount,
+                cancelledCount = uiState.cancelledCount,
+                isLoading = uiState.isLoading
+            )
 
-        val statuses = remember(
-            state.rows,
-            state.statusFilter
-        ) {
-            listOf("ALL") +
-                    state.rows
-                        .map { it.status }
-                        .filter { it.isNotBlank() }
-                        .distinct()
-                        .sorted()
-        }
+            // Status Filter Chips
+            StatusFilterChips(
+                selectedStatus = uiState.statusFilter,
+                onStatusSelected = viewModel::updateStatusFilter,
+                statuses = filterOptions.statuses
+            )
 
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            statuses.forEach { status ->
-                FilterChip(
-                    selected =
-                        state.statusFilter == status,
-                    onClick = {
-                        viewModel.updateStatusFilter(
-                            status
-                        )
-                    },
-                    label = {
+            // List or Empty State
+            if (uiState.isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (uiState.errorMessage != null) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            status.replace(
-                                '_',
-                                ' '
-                            )
+                            text = uiState.errorMessage!!,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(16.dp)
                         )
-                    }
-                )
-            }
-        }
-
-        when {
-            state.isLoading -> {
-                CircularProgressIndicator()
-            }
-
-            state.errorMessage != null -> {
-                Text(
-                    state.errorMessage!!,
-                    color =
-                        MaterialTheme.colorScheme.error
-                )
-            }
-
-            state.rows.isEmpty() -> {
-                Card(
-                    colors =
-                        CardDefaults.cardColors(
-                            containerColor = Page
-                        ),
-                    border =
-                        BorderStroke(
-                            1.dp,
-                            Gold.copy(alpha = .45f)
-                        )
-                ) {
-                    Text(
-                        "No records found.",
-                        Modifier.padding(20.dp),
-                        color = Navy
-                    )
-                }
-            }
-
-            else -> {
-                state.rows.forEach { row ->
-
-                    Card(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .combinedClickable(
-                                    onClick = {
-                                        if (
-                                            viewModel.registerType ==
-                                            SalesRegisterType.INVOICE
-                                        ) {
-                                            onViewInvoice(row.id)
-                                        }
-                                    },
-                                    onLongClick = {
-                                        selectedRow = row
-                                        showRowActions = true
-                                    }
-                                ),
-                        shape =
-                            RoundedCornerShape(14.dp),
-                        colors =
-                            CardDefaults.cardColors(
-                                containerColor =
-                                    Color.White
-                            ),
-                        border =
-                            BorderStroke(
-                                1.dp,
-                                Color(0xFFDDE3EC)
-                            )
-                    ) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            horizontalArrangement =
-                                Arrangement.SpaceBetween,
-                            verticalAlignment =
-                                Alignment.CenterVertically
-                        ) {
-                            Column(
-                                Modifier.fillMaxWidth(0.72f),
-                                verticalArrangement =
-                                    Arrangement.spacedBy(3.dp)
-                            ) {
-                                Text(
-                                    row.documentNumber,
-                                    fontWeight =
-                                        FontWeight.Bold,
-                                    color = Navy
-                                )
-
-                                Text(
-                                    "${row.documentDate}  •  ${row.customerName}"
-                                )
-
-                                if (
-                                    row.secondaryInfo
-                                        .isNotBlank()
-                                ) {
-                                    Text(
-                                        row.secondaryInfo,
-                                        style =
-                                            MaterialTheme
-                                                .typography
-                                                .bodySmall
-                                    )
-                                }
-                            }
-
-                            Column(
-                                horizontalAlignment =
-                                    Alignment.End
-                            ) {
-                                Text(
-                                    row.status.replace(
-                                        '_',
-                                        ' '
-                                    ),
-                                    fontWeight =
-                                        FontWeight.SemiBold,
-                                    color = Navy
-                                )
-
-                                row.amount?.let {
-                                    Text(
-                                        money.format(it),
-                                        fontWeight =
-                                            FontWeight.Bold
-                                    )
-                                }
-                            }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = viewModel::refresh) {
+                            Text("Retry")
                         }
                     }
                 }
-            }
-        }
-    }
-
-    if (
-        showRowActions &&
-        selectedRow != null
-    ) {
-        val row = selectedRow!!
-
-        AlertDialog(
-            onDismissRequest = {
-                showRowActions = false
-                selectedRow = null
-            },
-            title = {
-                Text(row.documentNumber)
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+            } else if (uiState.rows.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        "${row.customerName}\n${row.documentDate}",
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-
-                    if (
-                        viewModel.registerType ==
-                        SalesRegisterType.INVOICE
-                    ) {
-                        TextButton(
-                            enabled =
-                                !isActionRunning &&
-                                        !row.status.trim().equals(
-                                            "CANCELLED",
-                                            ignoreCase = true
-                                        ),
-                            onClick = {
-                                showRowActions = false
-                                selectedRow = null
-                                onEditInvoice(row.id)
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Edit Invoice")
-                        }
-
-                        TextButton(
-                            enabled =
-                                !isActionRunning &&
-                                        !row.status.trim().equals(
-                                            "CANCELLED",
-                                            ignoreCase = true
-                                        ),
-                            onClick = {
-                                showRowActions = false
-                                cancellationReason = ""
-                                showCancelDialog = true
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Delete Invoice")
-                        }
-
-                        TextButton(
-                            onClick = {
-                                showRowActions = false
-                                selectedRow = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Cancel")
-                        }
-                    } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.Inbox,
+                            contentDescription = "Empty",
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Edit/Delete actions for this document type will be connected with its own transaction workflow."
+                            text = "No records found",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-
-                        TextButton(
-                            onClick = {
-                                showRowActions = false
-                                selectedRow = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Cancel")
-                        }
                     }
                 }
-            },
-            confirmButton = {},
-            dismissButton = {}
-        )
-    }
-
-    if (
-        showCancelDialog &&
-        selectedRow != null
-    ) {
-        val row = selectedRow!!
-
-        AlertDialog(
-            onDismissRequest = {
-                if (!isActionRunning) {
-                    showCancelDialog = false
-                    selectedRow = null
-                    cancellationReason = ""
-                }
-            },
-            title = {
-                Text(
-                    "Delete ${row.documentNumber}?"
-                )
-            },
-            text = {
-                Column(
-                    verticalArrangement =
-                        Arrangement.spacedBy(12.dp)
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(
-                        "This safely removes the invoice from active posting without destroying audit history. The invoice will remain as CANCELLED, and physical serials will return from SOLD to IN_STOCK only if the complete reversal is safe."
-                    )
-
-                    OutlinedTextField(
-                        value =
-                            cancellationReason,
-                        onValueChange = {
-                            cancellationReason = it
-                        },
-                        label = {
-                            Text(
-                                "Cancellation reason"
-                            )
-                        },
-                        enabled =
-                            !isActionRunning,
-                        modifier =
-                            Modifier.fillMaxWidth()
-                    )
-
-                    if (isActionRunning) {
-                        CircularProgressIndicator()
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled =
-                        !isActionRunning &&
-                                cancellationReason
-                                    .trim()
-                                    .isNotBlank(),
-                    onClick = {
-                        viewModel.cancelInvoice(
+                    items(uiState.rows) { row ->
+                        SalesRegisterRowItem(
                             row = row,
-                            reason =
-                                cancellationReason
+                            onClick = { onViewDetail(row.id) },
+                            onCancelClick = {
+                                viewModel.setCancelDialog(row)
+                            },
+                            onDeleteClick = {
+                                if (row.status.uppercase() == "DRAFT") {
+                                    viewModel.deleteInvoice(row.id)
+                                }
+                            },
+                            onEditClick = {
+                                onEditInvoice?.invoke(row.id)
+                            },
+                            onSelectionToggle = {
+                                viewModel.toggleSelection(row.id)
+                            },
+                            isSelected = uiState.selectedIds.contains(row.id)
                         )
+                    }
+                }
+            }
+        }
+    }
 
-                        showCancelDialog = false
-                        selectedRow = null
-                        cancellationReason = ""
-                    }
-                ) {
-                    Text("Delete Invoice")
-                }
+    // Cancel Dialog
+    if (uiState.showCancelDialog) {
+        CancelDialog(
+            reason = uiState.cancelReason,
+            onReasonChange = viewModel::updateCancelReason,
+            onConfirm = viewModel::confirmCancel,
+            onDismiss = viewModel::dismissCancelDialog,
+            isRunning = uiState.isActionRunning
+        )
+    }
+
+    // Export Dialog
+    if (uiState.showExportDialog) {
+        ExportDialog(
+            onDismiss = { viewModel.update { it.copy(showExportDialog = false) } },
+            onPdfExport = {
+                viewModel.update { it.copy(showExportDialog = false) }
+                viewModel.exportPdfAndShare(context)
             },
-            dismissButton = {
-                TextButton(
-                    enabled =
-                        !isActionRunning,
-                    onClick = {
-                        showCancelDialog = false
-                        selectedRow = null
-                        cancellationReason = ""
-                    }
-                ) {
-                    Text("Cancel")
-                }
+            onExcelExport = {
+                viewModel.update { it.copy(showExportDialog = false) }
+                viewModel.exportExcelAndShare(context)
+            },
+            onPrint = {
+                viewModel.update { it.copy(showExportDialog = false) }
+                viewModel.printRegister(context)
             }
         )
     }
+}
+
+@Composable
+fun SearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onRefresh: () -> Unit
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = { Text("Search by No., Customer, Date...") },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Default.Clear, contentDescription = "Clear")
+                }
+            }
+            IconButton(onClick = onRefresh) {
+                Icon(Icons.Default.Refresh, contentDescription = "Refresh", modifier = Modifier.size(20.dp))
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp),
+        singleLine = true,
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        )
+    )
+}
+
+@Composable
+fun SummaryRow(
+    totalAmount: Double,
+    totalCount: Int,
+    postedCount: Int,
+    cancelledCount: Int,
+    isLoading: Boolean
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            SummaryItem(
+                label = "Total",
+                value = if (isLoading) "..." else "₹${String.format("%.2f", totalAmount)}",
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            SummaryItem(
+                label = "Count",
+                value = if (isLoading) "..." else totalCount.toString(),
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            SummaryItem(
+                label = "Posted",
+                value = if (isLoading) "..." else postedCount.toString(),
+                color = Color(0xFF4CAF50)
+            )
+            SummaryItem(
+                label = "Cancelled",
+                value = if (isLoading) "..." else cancelledCount.toString(),
+                color = Color(0xFFF44336)
+            )
+        }
+    }
+}
+
+@Composable
+fun SummaryItem(
+    label: String,
+    value: String,
+    color: Color
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+fun StatusFilterChips(
+    selectedStatus: String,
+    onStatusSelected: (String) -> Unit,
+    statuses: List<String>
+) {
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(statuses) { status ->
+            val isSelected = status == selectedStatus
+            FilterChip(
+                selected = isSelected,
+                onClick = { onStatusSelected(status) },
+                label = { Text(status) },
+                modifier = Modifier.animateItem(),
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                    selectedLabelColor = Color.White
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun SalesRegisterRowItem(
+    row: SalesRegisterRow,
+    onClick: () -> Unit,
+    onCancelClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    onEditClick: () -> Unit,
+    onSelectionToggle: () -> Unit,
+    isSelected: Boolean
+) {
+    val statusColor = when (row.status.uppercase()) {
+        "POSTED" -> Color(0xFF4CAF50)
+        "CANCELLED" -> Color(0xFFF44336)
+        "DRAFT" -> Color(0xFFFF9800)
+        "CONVERTED" -> Color(0xFF2196F3)
+        else -> Color.Gray
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 1.dp
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Selection Checkbox
+            if (row.isCancellable) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onSelectionToggle() }
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = row.documentNumber,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = row.documentDate,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    text = row.customerName,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (row.secondaryInfo.isNotEmpty()) {
+                    Text(
+                        text = row.secondaryInfo,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Amount
+                row.amount?.let { amount ->
+                    Text(
+                        text = "₹${String.format("%.2f", amount)}",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                // Status Chip with Actions
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // Edit Button
+                    if (row.isEditable && row.status.uppercase() != "CANCELLED") {
+                        IconButton(
+                            onClick = onEditClick,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Edit",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    // Cancel Button
+                    if (row.isCancellable && row.status.uppercase() != "CANCELLED") {
+                        IconButton(
+                            onClick = onCancelClick,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Cancel,
+                                contentDescription = "Cancel",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFFF44336)
+                            )
+                        }
+                    }
+                    // Delete Button (Soft Delete Draft Only)
+                    if (row.status.uppercase() == "DRAFT") {
+                        IconButton(
+                            onClick = onDeleteClick,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFFB42318)
+                            )
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = statusColor.copy(alpha = 0.2f)
+                    ) {
+                        Text(
+                            text = row.status,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = statusColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CancelDialog(
+    reason: String,
+    onReasonChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    isRunning: Boolean
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cancel Document") },
+        text = {
+            Column {
+                Text("Are you sure you want to cancel this document?")
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = onReasonChange,
+                    label = { Text("Cancellation Reason *") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    maxLines = 3,
+                    enabled = !isRunning
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = reason.trim().isNotEmpty() && !isRunning,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                if (isRunning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White
+                    )
+                } else {
+                    Text("Cancel Document")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isRunning
+            ) {
+                Text("Dismiss")
+            }
+        }
+    )
+}
+
+@Composable
+fun ExportDialog(
+    onDismiss: () -> Unit,
+    onPdfExport: () -> Unit,
+    onExcelExport: () -> Unit,
+    onPrint: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Export Register") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Choose export format:")
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Button(
+                        onClick = onPdfExport,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFF44336)
+                        )
+                    ) {
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("PDF")
+                    }
+                    Button(
+                        onClick = onExcelExport,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4CAF50)
+                        )
+                    ) {
+                        Icon(Icons.Default.GridOn, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Excel")
+                    }
+                    Button(
+                        onClick = onPrint,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF2196F3)
+                        )
+                    ) {
+                        Icon(Icons.Default.Print, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Print")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        },
+        dismissButton = null
+    )
 }

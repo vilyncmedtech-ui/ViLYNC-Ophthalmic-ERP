@@ -86,6 +86,42 @@ interface SalesCreditNoteDao {
         customerId: Long
     ): Flow<List<SalesCreditNoteEntity>>
 
+    @Query(
+        """
+        SELECT * FROM sales_credit_notes 
+        WHERE (creditNoteNumber LIKE '%' || :query || '%' OR customerName LIKE '%' || :query || '%')
+          AND status != 'CANCELLED'
+        ORDER BY id DESC LIMIT 20
+        """
+    )
+    suspend fun searchCreditNotes(query: String): List<SalesCreditNoteEntity>
+
+
+    // =========================================================
+    // FINANCIAL AGGREGATION
+    // =========================================================
+
+    @Query("SELECT SUM(totalAmount) FROM sales_credit_notes WHERE customerId = :customerId AND status = 'POSTED'")
+    suspend fun getTotalCreditNoteAmountForCustomer(customerId: Long): Double?
+
+    // =========================================================
+    // PERIOD REPORTING QUERIES
+    // =========================================================
+
+    @Query("""
+        SELECT SUM(totalAmount) FROM sales_credit_notes 
+        WHERE customerId = :customerId AND status = 'POSTED'
+          AND (substr(creditNoteDate, 7, 4) || '-' || substr(creditNoteDate, 4, 2) || '-' || substr(creditNoteDate, 1, 2)) < :startDate
+    """)
+    suspend fun getOpeningCreditNoteTotal(customerId: Long, startDate: String): Double?
+
+    @Query("""
+        SELECT * FROM sales_credit_notes 
+        WHERE customerId = :customerId AND status = 'POSTED'
+          AND (substr(creditNoteDate, 7, 4) || '-' || substr(creditNoteDate, 4, 2) || '-' || substr(creditNoteDate, 1, 2)) BETWEEN :startDate AND :endDate
+    """)
+    suspend fun getCreditNotesForPeriod(customerId: Long, startDate: String, endDate: String): List<SalesCreditNoteEntity>
+
     // =========================================================
     // ITEMS / PHYSICAL LENSES
     // =========================================================

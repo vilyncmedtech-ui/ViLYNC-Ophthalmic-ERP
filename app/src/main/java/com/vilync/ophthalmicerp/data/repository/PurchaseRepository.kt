@@ -303,13 +303,16 @@ class PurchaseRepository(
 
                                     supplierName =
                                         purchase
-                                            .supplierName
-                                            .trim(),
+                                        .supplierName
+                                        .trim(),
 
                                     purchaseInvoiceNumber =
                                         purchase
-                                            .invoiceNumber
-                                            .trim(),
+                                        .invoiceNumber
+                                        .trim(),
+
+                                    purchaseId = purchaseId,
+                                    purchaseItemId = savedItem.id,
 
                                     status =
                                         "IN_STOCK"
@@ -933,4 +936,7 @@ class PurchaseRepository(
         purchaseDao.getPurchasesBySupplier(
             supplierName
         )
+
+    suspend fun getTotalPurchaseAmountForSupplier(supplierId: Long): Double =
+        purchaseDao.getTotalPurchaseAmountForSupplier(supplierId) ?: 0.0
 }

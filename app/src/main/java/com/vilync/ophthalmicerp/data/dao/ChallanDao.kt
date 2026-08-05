@@ -314,6 +314,28 @@ interface ChallanDao {
 
 
     // =========================================================
+    // ALL CHALLANS (REGISTER)
+    // =========================================================
+
+    @Query("SELECT * FROM challans ORDER BY id DESC")
+    fun getAllChallans(): Flow<List<ChallanEntity>>
+
+
+    @Query("SELECT COUNT(*) FROM challans WHERE status IN ('OPEN', 'PARTIALLY_SETTLED')")
+    fun observeOpenChallanCount(): Flow<Int>
+
+    @Query(
+        """
+        SELECT * FROM challans 
+        WHERE (challanNumber LIKE '%' || :query || '%' OR customerName LIKE '%' || :query || '%')
+          AND status != 'CANCELLED'
+        ORDER BY id DESC LIMIT 20
+        """
+    )
+    suspend fun searchChallans(query: String): List<ChallanEntity>
+
+
+    // =========================================================
     // DUPLICATE CHALLAN NUMBER PROTECTION
     // =========================================================
 

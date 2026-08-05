@@ -40,10 +40,18 @@ private val Page = Color(0xFFF7F9FC)
 fun NewCreditNoteScreen(
     viewModel: NewCreditNoteViewModel,
     onBack: () -> Unit,
-    onOpenRegister: () -> Unit
+    onOpenRegister: () -> Unit,
+    onSavedToDetail: (Long) -> Unit = {}
 ) {
     val state = viewModel.uiState.collectAsState().value
     val money = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+
+    androidx.compose.runtime.LaunchedEffect(state.savedCreditNoteId) {
+        if (state.savedCreditNoteId != null) {
+            onSavedToDetail(state.savedCreditNoteId!!)
+            viewModel.clearMessage()
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -92,8 +100,9 @@ fun NewCreditNoteScreen(
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
-                value = state.creditNoteNumber,
-                onValueChange = viewModel::updateCreditNoteNumber,
+                value = "Auto-generated",
+                onValueChange = {},
+                readOnly = true,
                 label = { Text("Credit Note Number") },
                 modifier = Modifier.weight(1f),
                 singleLine = true

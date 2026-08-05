@@ -1,5 +1,6 @@
 package com.vilync.ophthalmicerp.feature.master.party.gst
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -14,7 +15,7 @@ class GstinLookupService(
 ) {
 
     companion object {
-
+        private const val TAG = "GST_LOOKUP"
         private const val BASE_URL =
             "https://gstverify.co.in/api/v1/verify/"
     }
@@ -32,16 +33,17 @@ class GstinLookupService(
             var connection: HttpURLConnection? = null
 
             try {
+                Log.d(TAG, "GST API Key present: ${apiKey.isNotBlank()}")
 
                 val cleanGstin =
                     gstin
                         .trim()
                         .uppercase()
 
+                Log.d(TAG, "Request GSTIN: $cleanGstin")
 
                 if (cleanGstin.length != 15) {
-
-                    return@withContext _root_ide_package_.com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
+                    return@withContext com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
                         success = false,
                         message =
                             "Enter a valid 15-character GSTIN."
@@ -50,8 +52,7 @@ class GstinLookupService(
 
 
                 if (apiKey.isBlank()) {
-
-                    return@withContext _root_ide_package_.com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
+                    return@withContext com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
                         success = false,
                         message =
                             "GST API key is not configured."
@@ -65,6 +66,7 @@ class GstinLookupService(
                                 cleanGstin
                     )
 
+                Log.d(TAG, "Request URL: $url")
 
                 connection =
                     url.openConnection()
@@ -94,6 +96,7 @@ class GstinLookupService(
                 val responseCode =
                     connection.responseCode
 
+                Log.d(TAG, "HTTP Response Code: $responseCode")
 
                 val inputStream =
                     if (
@@ -123,10 +126,10 @@ class GstinLookupService(
                         }
                         .orEmpty()
 
+                Log.d(TAG, "Raw Response Body: $responseText")
 
                 if (responseText.isBlank()) {
-
-                    return@withContext _root_ide_package_.com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
+                    return@withContext com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
                         success = false,
                         message =
                             "GST server returned an empty response."
@@ -141,8 +144,8 @@ class GstinLookupService(
 
 
             } catch (exception: Exception) {
-
-                _root_ide_package_.com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
+                Log.e(TAG, "GST Lookup Exception: ${exception.message}", exception)
+                com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
                     success = false,
 
                     message =
@@ -229,7 +232,7 @@ class GstinLookupService(
             val data =
                 dataObject?.let {
 
-                    _root_ide_package_.com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiData(
+                    val apiData = com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiData(
 
                         gstin =
                             it.stringOrNull(
@@ -286,10 +289,16 @@ class GstinLookupService(
                                 "nature_of_business"
                             )
                     )
+                    
+                    Log.d(TAG, "Parsed Name: ${apiData.legal_name}")
+                    Log.d(TAG, "Parsed GSTIN: ${apiData.gstin}")
+                    Log.d(TAG, "Parsed Address: ${apiData.address}")
+                    
+                    apiData
                 }
 
 
-            _root_ide_package_.com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
+            com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
 
                 success =
                     success &&
@@ -317,8 +326,8 @@ class GstinLookupService(
 
 
         } catch (exception: Exception) {
-
-            _root_ide_package_.com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
+            Log.e(TAG, "JSON Parsing Exception: ${exception.message}")
+            com.vilync.ophthalmicerp.feature.master.party.gst.GstinApiResponse(
 
                 success = false,
 

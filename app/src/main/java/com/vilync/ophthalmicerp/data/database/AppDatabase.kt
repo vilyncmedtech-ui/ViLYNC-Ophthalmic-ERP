@@ -2,6 +2,7 @@ package com.vilync.ophthalmicerp.data.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.vilync.ophthalmicerp.data.dao.AuditTrailDao
@@ -16,12 +17,23 @@ import com.vilync.ophthalmicerp.data.dao.SalesDao
 import com.vilync.ophthalmicerp.data.dao.SalesCreditNoteDao
 import com.vilync.ophthalmicerp.data.dao.ProformaInvoiceDao
 import com.vilync.ophthalmicerp.data.dao.SampleIssueDao
+import com.vilync.ophthalmicerp.data.dao.OpeningStockDao
+import com.vilync.ophthalmicerp.data.dao.AccountDao
+import com.vilync.ophthalmicerp.data.dao.FinancialTransactionDao
 import com.vilync.ophthalmicerp.data.dao.StockMovementDao
 import com.vilync.ophthalmicerp.data.dao.UserDao
+import com.vilync.ophthalmicerp.feature.backup.data.BackupMetadataDao
+import com.vilync.ophthalmicerp.feature.backup.data.BackupMetadataEntity
+import com.vilync.ophthalmicerp.data.dao.DocumentNumberingDao
+import com.vilync.ophthalmicerp.data.entity.DocumentNumberingEntity
 import com.vilync.ophthalmicerp.data.entity.AuditTrailEntity
 import com.vilync.ophthalmicerp.data.entity.ChallanEntity
 import com.vilync.ophthalmicerp.data.entity.ChallanItemEntity
 import com.vilync.ophthalmicerp.data.entity.InventoryUnitEntity
+import com.vilync.ophthalmicerp.data.entity.OpeningStockEntity
+import com.vilync.ophthalmicerp.data.entity.OpeningStockItemEntity
+import com.vilync.ophthalmicerp.data.entity.AccountEntity
+import com.vilync.ophthalmicerp.data.entity.FinancialTransactionEntity
 import com.vilync.ophthalmicerp.data.entity.ProductEntity
 import com.vilync.ophthalmicerp.data.entity.PurchaseEntity
 import com.vilync.ophthalmicerp.data.entity.PurchaseItemEntity
@@ -45,6 +57,12 @@ import com.vilync.ophthalmicerp.master.party.data.PartyDao
 import com.vilync.ophthalmicerp.master.party.data.PartyEntity
 import com.vilync.ophthalmicerp.feature.companyprofile.data.CompanyProfileDao
 import com.vilync.ophthalmicerp.feature.companyprofile.data.CompanyProfileEntity
+import com.vilync.ophthalmicerp.feature.designer.data.DesignerTypeConverters
+import com.vilync.ophthalmicerp.feature.designer.data.dao.DocumentDesignerDao
+import com.vilync.ophthalmicerp.feature.designer.data.entity.DocumentTemplateEntity
+import com.vilync.ophthalmicerp.feature.designer.data.entity.TemplateAssetEntity
+import com.vilync.ophthalmicerp.feature.designer.data.entity.TemplateAssignmentEntity
+import com.vilync.ophthalmicerp.feature.designer.data.entity.TemplateVersionEntity
 
 
 @Database(
@@ -73,11 +91,22 @@ import com.vilync.ophthalmicerp.feature.companyprofile.data.CompanyProfileEntity
         ProformaInvoiceItemEntity::class,
         SampleIssueEntity::class,
         SampleIssueItemEntity::class,
-        CompanyProfileEntity::class
+        CompanyProfileEntity::class,
+        OpeningStockEntity::class,
+        OpeningStockItemEntity::class,
+        AccountEntity::class,
+        FinancialTransactionEntity::class,
+        BackupMetadataEntity::class,
+        DocumentNumberingEntity::class,
+        DocumentTemplateEntity::class,
+        TemplateVersionEntity::class,
+        TemplateAssignmentEntity::class,
+        TemplateAssetEntity::class
     ],
-    version = 19,
+    version = 26,
     exportSchema = false
 )
+@TypeConverters(DesignerTypeConverters::class)
 abstract class AppDatabase : RoomDatabase() {
 
 
@@ -134,6 +163,16 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun sampleIssueDao(): SampleIssueDao
 
+    abstract fun openingStockDao(): OpeningStockDao
+
+    abstract fun accountDao(): AccountDao
+
+    abstract fun financialTransactionDao(): FinancialTransactionDao
+
+    abstract fun documentNumberingDao(): DocumentNumberingDao
+
+    abstract fun backupMetadataDao(): BackupMetadataDao
+
 
     // =========================================================
     // PARTY MASTER
@@ -161,6 +200,13 @@ abstract class AppDatabase : RoomDatabase() {
     // =========================================================
 
     abstract fun companyProfileDao(): CompanyProfileDao
+
+
+    // =========================================================
+    // DOCUMENT DESIGNER
+    // =========================================================
+
+    abstract fun documentDesignerDao(): DocumentDesignerDao
 
 
     companion object {
@@ -2021,6 +2067,317 @@ abstract class AppDatabase : RoomDatabase() {
                     database.execSQL(
                         "ALTER TABLE sales ADD COLUMN eWayNumber TEXT NOT NULL DEFAULT ''"
                     )
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 19 -> 20
+        // =====================================================
+        //
+        // Adds historical cost snapshot and deterministic links.
+        // Existing stock and sales records remain preserved.
+        // =====================================================
+
+        val MIGRATION_19_20 =
+            object : Migration(
+                19,
+                20
+            ) {
+
+                override fun migrate(
+                    database: SupportSQLiteDatabase
+                ) {
+
+                    // InventoryUnitEntity updates
+                    database.execSQL("ALTER TABLE inventory_units ADD COLUMN purchaseId INTEGER DEFAULT NULL")
+                    database.execSQL("ALTER TABLE inventory_units ADD COLUMN purchaseItemId INTEGER DEFAULT NULL")
+
+                    // SaleLensEntity updates
+                    database.execSQL("ALTER TABLE sale_lenses ADD COLUMN purchasePriceSnapshot REAL NOT NULL DEFAULT 0.0")
+                    database.execSQL("ALTER TABLE sale_lenses ADD COLUMN purchaseGstAmountSnapshot REAL NOT NULL DEFAULT 0.0")
+                    database.execSQL("ALTER TABLE sale_lenses ADD COLUMN purchaseInvoiceId INTEGER DEFAULT NULL")
+                    database.execSQL("ALTER TABLE sale_lenses ADD COLUMN purchaseInvoiceNumber TEXT NOT NULL DEFAULT ''")
+                    database.execSQL("ALTER TABLE sale_lenses ADD COLUMN purchaseItemId INTEGER DEFAULT NULL")
+                    database.execSQL("ALTER TABLE sale_lenses ADD COLUMN purchaseDate TEXT NOT NULL DEFAULT ''")
+                    database.execSQL("ALTER TABLE sale_lenses ADD COLUMN costResolutionSource TEXT NOT NULL DEFAULT 'UNKNOWN'")
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 20 -> 21
+        // =====================================================
+        //
+        // Final Inventory Planning fields added to Products.
+        //
+        // 1. minimumStock
+        // 2. reorderLevel
+        // 3. maximumStock
+        // 4. reorderQuantity
+        // 5. leadTimeDays
+        // =====================================================
+
+        val MIGRATION_20_21 =
+            object : Migration(20, 21) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("ALTER TABLE products ADD COLUMN minimumStock INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE products ADD COLUMN reorderLevel INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE products ADD COLUMN maximumStock INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE products ADD COLUMN reorderQuantity INTEGER NOT NULL DEFAULT 0")
+                    database.execSQL("ALTER TABLE products ADD COLUMN leadTimeDays INTEGER NOT NULL DEFAULT 0")
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 21 -> 22
+        // =====================================================
+        //
+        // Opening Stock Module.
+        //
+        // 1. opening_stocks
+        // 2. opening_stock_items
+        // =====================================================
+
+        val MIGRATION_21_22 =
+            object : Migration(21, 22) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS opening_stocks (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            entryNumber TEXT NOT NULL,
+                            normalizedEntryNumber TEXT NOT NULL,
+                            entryDate TEXT NOT NULL,
+                            financialYearStart INTEGER NOT NULL,
+                            remarks TEXT NOT NULL,
+                            status TEXT NOT NULL,
+                            createdAt INTEGER NOT NULL,
+                            updatedAt INTEGER NOT NULL
+                        )
+                    """.trimIndent())
+
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_opening_stocks_entryNumber ON opening_stocks(entryNumber)")
+                    database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_opening_stocks_normalizedEntryNumber ON opening_stocks(normalizedEntryNumber)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_opening_stocks_entryDate ON opening_stocks(entryDate)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_opening_stocks_status ON opening_stocks(status)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_opening_stocks_financialYearStart ON opening_stocks(financialYearStart)")
+
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS opening_stock_items (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            openingStockId INTEGER NOT NULL,
+                            productId INTEGER NOT NULL,
+                            productName TEXT NOT NULL,
+                            model TEXT NOT NULL,
+                            power TEXT NOT NULL,
+                            batchNumber TEXT NOT NULL,
+                            expiryDate TEXT NOT NULL,
+                            quantity INTEGER NOT NULL,
+                            unitCost REAL NOT NULL,
+                            totalCost REAL NOT NULL,
+                            FOREIGN KEY(openingStockId) REFERENCES opening_stocks(id) ON UPDATE NO ACTION ON DELETE CASCADE,
+                            FOREIGN KEY(productId) REFERENCES products(id) ON UPDATE NO ACTION ON DELETE NO ACTION
+                        )
+                    """.trimIndent())
+
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_opening_stock_items_openingStockId ON opening_stock_items(openingStockId)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_opening_stock_items_productId ON opening_stock_items(productId)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_opening_stock_items_power ON opening_stock_items(power)")
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 22 -> 23
+        // =====================================================
+        //
+        // Payment Module Foundation.
+        //
+        // 1. accounts
+        // 2. financial_transactions
+        // =====================================================
+
+        val MIGRATION_22_23 =
+            object : Migration(22, 23) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS accounts (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            name TEXT NOT NULL,
+                            type TEXT NOT NULL,
+                            bankName TEXT NOT NULL DEFAULT '',
+                            accountNumber TEXT NOT NULL DEFAULT '',
+                            ifscCode TEXT NOT NULL DEFAULT '',
+                            initialBalance REAL NOT NULL DEFAULT 0.0,
+                            isActive INTEGER NOT NULL DEFAULT 1,
+                            createdAt INTEGER NOT NULL,
+                            updatedAt INTEGER NOT NULL
+                        )
+                    """.trimIndent())
+
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS financial_transactions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            transactionDate TEXT NOT NULL,
+                            amount REAL NOT NULL,
+                            type TEXT NOT NULL,
+                            accountId INTEGER NOT NULL,
+                            partyId INTEGER NOT NULL,
+                            referenceNumber TEXT NOT NULL DEFAULT '',
+                            remarks TEXT NOT NULL DEFAULT '',
+                            status TEXT NOT NULL DEFAULT 'DRAFT',
+                            financialYearStart INTEGER NOT NULL,
+                            createdAt INTEGER NOT NULL,
+                            updatedAt INTEGER NOT NULL,
+                            FOREIGN KEY(accountId) REFERENCES accounts(id) ON UPDATE NO ACTION ON DELETE RESTRICT,
+                            FOREIGN KEY(partyId) REFERENCES parties(id) ON UPDATE NO ACTION ON DELETE RESTRICT
+                        )
+                    """.trimIndent())
+
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_financial_transactions_accountId ON financial_transactions(accountId)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_financial_transactions_partyId ON financial_transactions(partyId)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_financial_transactions_transactionDate ON financial_transactions(transactionDate)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_financial_transactions_type ON financial_transactions(type)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_financial_transactions_status ON financial_transactions(status)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_financial_transactions_financialYearStart ON financial_transactions(financialYearStart)")
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 23 -> 24
+        // =====================================================
+        //
+        // Google Drive Backup Foundation.
+        //
+        // 1. backup_metadata
+        // =====================================================
+
+        val MIGRATION_23_24 =
+            object : Migration(23, 24) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS backup_metadata (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            erpVersion TEXT NOT NULL,
+                            dbVersion INTEGER NOT NULL,
+                            timestamp INTEGER NOT NULL,
+                            companyName TEXT NOT NULL,
+                            companyGst TEXT NOT NULL,
+                            fileSize INTEGER NOT NULL,
+                            checksumSha256 TEXT NOT NULL,
+                            integrityResult TEXT NOT NULL,
+                            driveFileId TEXT,
+                            status TEXT NOT NULL
+                        )
+                    """.trimIndent())
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 24 -> 25
+        // =====================================================
+        //
+        // Centralized Document Numbering Series.
+        // =====================================================
+
+        val MIGRATION_24_25 =
+            object : Migration(24, 25) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS document_series (
+                            documentType TEXT NOT NULL,
+                            financialYearStart INTEGER NOT NULL,
+                            lastSequenceNumber INTEGER NOT NULL,
+                            prefix TEXT NOT NULL,
+                            padding INTEGER NOT NULL DEFAULT 4,
+                            PRIMARY KEY(documentType, financialYearStart)
+                        )
+                    """.trimIndent())
+                    
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_document_series_documentType ON document_series(documentType)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_document_series_financialYearStart ON document_series(financialYearStart)")
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 25 -> 26
+        // =====================================================
+        //
+        // Universal Document Designer Foundation.
+        //
+        // 1. document_templates
+        // 2. template_versions
+        // 3. template_assignments
+        // 4. template_assets
+        // =====================================================
+
+        val MIGRATION_25_26 =
+            object : Migration(25, 26) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS document_templates (
+                            templateId TEXT PRIMARY KEY NOT NULL,
+                            templateName TEXT NOT NULL,
+                            documentType TEXT NOT NULL,
+                            description TEXT NOT NULL DEFAULT '',
+                            activeVersion INTEGER NOT NULL DEFAULT 1,
+                            status TEXT NOT NULL DEFAULT 'DRAFT',
+                            createdBy TEXT NOT NULL,
+                            modifiedBy TEXT NOT NULL,
+                            createdAt INTEGER NOT NULL,
+                            updatedAt INTEGER NOT NULL
+                        )
+                    """.trimIndent())
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_document_templates_documentType ON document_templates(documentType)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_document_templates_status ON document_templates(status)")
+
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS template_versions (
+                            versionId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            templateId TEXT NOT NULL,
+                            versionNumber INTEGER NOT NULL,
+                            layoutJson TEXT NOT NULL,
+                            status TEXT NOT NULL DEFAULT 'DRAFT',
+                            changeLog TEXT NOT NULL DEFAULT '',
+                            createdBy TEXT NOT NULL,
+                            createdAt INTEGER NOT NULL,
+                            FOREIGN KEY(templateId) REFERENCES document_templates(templateId) ON UPDATE NO ACTION ON DELETE CASCADE
+                        )
+                    """.trimIndent())
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_template_versions_templateId ON template_versions(templateId)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_template_versions_versionNumber ON template_versions(versionNumber)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_template_versions_status ON template_versions(status)")
+
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS template_assignments (
+                            assignmentId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            documentType TEXT NOT NULL,
+                            companyId INTEGER NOT NULL DEFAULT 0,
+                            branchId INTEGER NOT NULL DEFAULT 0,
+                            templateId TEXT NOT NULL,
+                            isActive INTEGER NOT NULL DEFAULT 1,
+                            updatedAt INTEGER NOT NULL,
+                            FOREIGN KEY(templateId) REFERENCES document_templates(templateId) ON UPDATE NO ACTION ON DELETE CASCADE
+                        )
+                    """.trimIndent())
+                    database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_template_assignments_documentType_companyId_branchId ON template_assignments(documentType, companyId, branchId)")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_template_assignments_templateId ON template_assignments(templateId)")
+
+                    database.execSQL("""
+                        CREATE TABLE IF NOT EXISTS template_assets (
+                            assetId TEXT PRIMARY KEY NOT NULL,
+                            assetName TEXT NOT NULL,
+                            assetType TEXT NOT NULL,
+                            assetUri TEXT,
+                            assetPath TEXT,
+                            createdAt INTEGER NOT NULL
+                        )
+                    """.trimIndent())
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_template_assets_assetName ON template_assets(assetName)")
                 }
             }
 

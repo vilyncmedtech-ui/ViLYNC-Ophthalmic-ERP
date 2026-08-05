@@ -1,13 +1,72 @@
 package com.vilync.ophthalmicerp.data.repository
 
+import androidx.room.withTransaction
+import com.vilync.ophthalmicerp.data.database.AppDatabase
 import com.vilync.ophthalmicerp.data.dao.ProformaInvoiceDao
 import com.vilync.ophthalmicerp.data.entity.ProformaInvoiceEntity
 import com.vilync.ophthalmicerp.data.entity.ProformaInvoiceItemEntity
 import kotlinx.coroutines.flow.Flow
 
 class ProformaInvoiceRepository(
-    private val proformaDao: ProformaInvoiceDao
+    private val proformaDao: ProformaInvoiceDao,
+    private val database: AppDatabase,
+    private val numberingRepository: DocumentNumberingRepository
 ) {
+
+    // =========================================================
+    // SAVE COMPLETE PROFORMA INVOICE
+    // =========================================================
+
+    suspend fun saveCompleteProforma(
+        proforma: ProformaInvoiceEntity,
+        items: List<ProformaInvoiceItemEntity>
+    ): Long {
+        return database.withTransaction {
+            val finalNumber = numberingRepository.getNextDocumentNumber(
+                DocumentType.PROFORMA,
+                proforma.financialYearStart
+            )
+
+            val proformaId = proformaDao.insertProformaInvoice(
+                proforma.copy(
+                    proformaNumber = finalNumber,
+                    normalizedProformaNumber = finalNumber.uppercase()
+                )
+            )
+
+            if (items.isNotEmpty()) {
+                proformaDao.insertProformaItems(
+                    items.map { it.copy(proformaInvoiceId = proformaId) }
+                )
+            }
+            proformaId
+        }
+    }
+
+    // =========================================================
+    // UPDATE COMPLETE PROFORMA INVOICE
+    // =========================================================
+
+    suspend fun updateCompleteProforma(
+        proforma: ProformaInvoiceEntity,
+        items: List<ProformaInvoiceItemEntity>
+    ) {
+        database.withTransaction {
+            proformaDao.updateProformaInvoice(proforma)
+            proformaDao.deleteItemsByProformaId(proforma.id)
+            if (items.isNotEmpty()) {
+                proformaDao.insertProformaItems(
+                    items.map { it.copy(proformaInvoiceId = proforma.id) }
+                )
+            }
+        }
+    }
+
+    suspend fun getProformaWithItems(proformaId: Long): Pair<ProformaInvoiceEntity, List<ProformaInvoiceItemEntity>>? {
+        val proforma = proformaDao.getProformaById(proformaId) ?: return null
+        val items = proformaDao.getItemsByProformaId(proformaId)
+        return proforma to items
+    }
 
     suspend fun insertProformaInvoice(
         proforma: ProformaInvoiceEntity

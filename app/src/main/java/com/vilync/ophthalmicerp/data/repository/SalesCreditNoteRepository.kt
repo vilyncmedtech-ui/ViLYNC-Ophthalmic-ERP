@@ -11,7 +11,8 @@ import kotlinx.coroutines.flow.Flow
 
 class SalesCreditNoteRepository(
     private val creditNoteDao: SalesCreditNoteDao,
-    private val database: AppDatabase? = null
+    private val database: AppDatabase? = null,
+    private val numberingRepository: DocumentNumberingRepository? = null
 ) {
 
     suspend fun insertCreditNote(creditNote: SalesCreditNoteEntity): Long =
@@ -40,6 +41,9 @@ class SalesCreditNoteRepository(
 
     fun getCreditNotesForCustomer(customerId: Long): Flow<List<SalesCreditNoteEntity>> =
         creditNoteDao.getCreditNotesForCustomer(customerId)
+
+    suspend fun getTotalCreditNoteAmountForCustomer(customerId: Long): Double =
+        creditNoteDao.getTotalCreditNoteAmountForCustomer(customerId) ?: 0.0
 
     suspend fun getItemsByCreditNoteId(creditNoteId: Long): List<SalesCreditNoteItemEntity> =
         creditNoteDao.getItemsByCreditNoteId(creditNoteId)
@@ -115,11 +119,17 @@ class SalesCreditNoteRepository(
                 }
             }
 
+            val finalCreditNoteNumber =
+                numberingRepository?.getNextDocumentNumber(
+                    DocumentType.CREDIT_NOTE,
+                    creditNote.financialYearStart
+                ) ?: creditNote.creditNoteNumber.trim()
+
             val creditNoteId = creditNoteDao.insertCreditNote(
                 creditNote.copy(
                     id = 0L,
-                    creditNoteNumber = creditNote.creditNoteNumber.trim(),
-                    normalizedCreditNoteNumber = normalizedNumber,
+                    creditNoteNumber = finalCreditNoteNumber,
+                    normalizedCreditNoteNumber = finalCreditNoteNumber.uppercase(),
                     customerName = creditNote.customerName.trim(),
                     reason = creditNote.reason.trim(),
                     remarks = creditNote.remarks.trim(),

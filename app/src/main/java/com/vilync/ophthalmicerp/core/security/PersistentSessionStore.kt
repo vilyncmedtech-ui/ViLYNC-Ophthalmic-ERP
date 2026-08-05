@@ -3,8 +3,10 @@ package com.vilync.ophthalmicerp.core.security
 import android.content.Context
 
 class PersistentSessionStore(
-    context: Context
+    private val context: Context
 ) {
+
+    fun getContext(): Context = context
 
     private val preferences =
         context.applicationContext.getSharedPreferences(

@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.vilync.ophthalmicerp.data.entity.StockMovementEntity
 import kotlinx.coroutines.flow.Flow
+import com.vilync.ophthalmicerp.data.dao.StockMovementRegisterRow
 
 
 @Dao
@@ -175,4 +176,44 @@ interface StockMovementDao {
     suspend fun deletePurchaseReceivedMovement(
         inventoryUnitId: Long
     )
+
+    // =========================================================
+    // MASTER MOVEMENT REGISTER QUERY
+    // =========================================================
+
+    @Query(
+        """
+        SELECT 
+            sm.*,
+            p.productName as productName,
+            p.model as model,
+            p.category as category,
+            iu.power as power,
+            iu.batchNumber as batchNumber,
+            (SELECT userDisplayName FROM audit_trail 
+             WHERE referenceNumber = sm.referenceNumber 
+             LIMIT 1) as userName
+        FROM stock_movements sm
+        LEFT JOIN inventory_units iu ON sm.inventoryUnitId = iu.id
+        LEFT JOIN products p ON iu.productId = p.id
+        WHERE (substr(sm.movementDate, 7, 4) || '-' || substr(sm.movementDate, 4, 2) || '-' || substr(sm.movementDate, 1, 2)) 
+              BETWEEN :startDate AND :endDate
+          AND (:movementType = 'All' OR sm.movementType = :movementType)
+          AND (:partyName IS NULL OR sm.partyName LIKE '%' || :partyName || '%')
+          AND (:serialNumber IS NULL OR sm.serialNumber LIKE '%' || :serialNumber || '%')
+          AND (:productId IS NULL OR iu.productId = :productId)
+          AND (:power IS NULL OR iu.power = :power)
+        ORDER BY (substr(sm.movementDate, 7, 4) || '-' || substr(sm.movementDate, 4, 2) || '-' || substr(sm.movementDate, 1, 2)) ASC, 
+                 sm.id ASC
+        """
+    )
+    suspend fun getMovementRegisterRows(
+        startDate: String,
+        endDate: String,
+        movementType: String,
+        partyName: String?,
+        serialNumber: String?,
+        productId: Long?,
+        power: String?
+    ): List<StockMovementRegisterRow>
 }

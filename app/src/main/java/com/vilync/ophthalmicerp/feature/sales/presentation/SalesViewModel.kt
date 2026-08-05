@@ -11,6 +11,7 @@ import com.vilync.ophthalmicerp.data.repository.ProductRepository
 import com.vilync.ophthalmicerp.data.repository.SalesRepository
 import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
 import com.vilync.ophthalmicerp.feature.master.party.model.PartyType
+import com.vilync.ophthalmicerp.feature.master.party.model.PartyMaster
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -158,17 +159,8 @@ class SalesViewModel(
     // =========================================================
 
     fun selectCustomer(
-        customerId: Long
+        customer: PartyMaster
     ) {
-
-        val customer =
-            _uiState.value
-                .customers
-                .firstOrNull {
-                    it.id == customerId
-                }
-                ?: return
-
         _uiState.value =
             _uiState.value.copy(
                 selectedCustomer =
@@ -2336,6 +2328,7 @@ class SalesViewModel(
                             isDirty = false,
                             isSaved = true,
                             isSavedSuccessfully = true,
+                            savedSaleId = saleId,
                             errorMessage = null,
                             successMessage =
                                 "Sales Invoice $invoiceNumber saved successfully."
@@ -2762,21 +2755,32 @@ class SalesViewModel(
     }
 
 
-    // =========================================================
-    // MESSAGE
-    // =========================================================
+    // = :::::::::::::::::::::::::::::::::::::::::::::::::::::::
+    // SAVE SUCCESS CONSUMED
+    // = :::::::::::::::::::::::::::::::::::::::::::::::::::::::
 
-    fun clearMessage() {
+    fun consumeSaveSuccess() {
 
         _uiState.value =
             _uiState.value.copy(
-                errorMessage =
+                isSaved =
+                    false,
+
+                isSavedSuccessfully =
+                    false,
+
+                savedSaleId =
                     null,
 
                 successMessage =
                     null
             )
     }
+
+
+    // =========================================================
+    // CLEAR ERROR
+    // =========================================================
 
 
     private fun showError(

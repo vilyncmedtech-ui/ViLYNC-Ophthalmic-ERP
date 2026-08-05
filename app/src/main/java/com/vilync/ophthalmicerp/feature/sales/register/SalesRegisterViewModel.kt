@@ -1,215 +1,175 @@
 package com.vilync.ophthalmicerp.feature.sales.register
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.vilync.ophthalmicerp.data.database.AppDatabase
-import com.vilync.ophthalmicerp.data.repository.SalesRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class SalesRegisterViewModel(
-    private val database: AppDatabase,
-    val registerType: SalesRegisterType
+    private val repository: SalesRegisterRepository,
+    val registerType: SalesRegisterType,
+    private val initialFinancialYear: Int
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(SalesRegisterUiState())
+    private val _uiState = MutableStateFlow(SalesRegisterUiState(financialYearFilter = initialFinancialYear))
     val uiState: StateFlow<SalesRegisterUiState> = _uiState.asStateFlow()
 
-    private var allRows: List<SalesRegisterRow> = emptyList()
+    private val _filterOptions = MutableStateFlow(SalesRegisterFilterOptions())
+    val filterOptions: StateFlow<SalesRegisterFilterOptions> = _filterOptions.asStateFlow()
 
-    private val salesRepository by lazy {
-        SalesRepository(
-            salesDao = database.salesDao(),
-            database = database
-        )
+    init {
+        observeData()
     }
 
-    private val _actionMessage = MutableStateFlow<String?>(null)
-    val actionMessage: StateFlow<String?> = _actionMessage.asStateFlow()
-
-    private val _isActionRunning = MutableStateFlow(false)
-    val isActionRunning: StateFlow<Boolean> = _isActionRunning.asStateFlow()
-
-    init { refresh() }
+    private fun observeData() {
+        repository.getRegisterRows(registerType)
+            .onEach { rows ->
+                _uiState.update { state ->
+                    val filtered = filterRows(rows, state.query, state.statusFilter)
+                    state.copy(
+                        isLoading = false,
+                        rows = rows,
+                        filteredRows = filtered,
+                        count = filtered.size,
+                        totalAmount = filtered.sumOf { it.amount ?: 0.0 },
+                        postedCount = filtered.count { it.status.uppercase() == "POSTED" },
+                        cancelledCount = filtered.count { it.status.uppercase() == "CANCELLED" }
+                    )
+                }
+            }
+            .catch { e ->
+                _uiState.update { it.copy(isLoading = false, errorMessage = e.message ?: "Unknown error") }
+            }
+            .launchIn(viewModelScope)
+    }
 
     fun refresh() {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
-            runCatching { withContext(Dispatchers.IO) { loadRows() } }
-                .onSuccess {
-                    allRows = it
-                    applyFilters()
-                }
-                .onFailure {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = it.message ?: "Unable to load register."
-                    )
-                }
+        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        // The flow observation handles the actual data update
+    }
+
+    private fun filterRows(rows: List<SalesRegisterRow>, query: String, status: String): List<SalesRegisterRow> {
+        return rows.filter { row ->
+            val matchesQuery = query.isBlank() || 
+                row.documentNumber.contains(query, ignoreCase = true) ||
+                row.customerName.contains(query, ignoreCase = true)
+            
+            val matchesStatus = status == "ALL" || row.status.uppercase() == status.uppercase()
+            
+            matchesQuery && matchesStatus
         }
     }
 
-    fun updateQuery(value: String) {
-        _uiState.value = _uiState.value.copy(query = value)
-        applyFilters()
+    fun updateQuery(query: String) {
+        _uiState.update { state ->
+            val filtered = filterRows(state.rows, query, state.statusFilter)
+            state.copy(
+                query = query,
+                filteredRows = filtered,
+                count = filtered.size,
+                totalAmount = filtered.sumOf { it.amount ?: 0.0 },
+                postedCount = filtered.count { it.status.uppercase() == "POSTED" },
+                cancelledCount = filtered.count { it.status.uppercase() == "CANCELLED" }
+            )
+        }
     }
 
-    fun updateStatusFilter(value: String) {
-        _uiState.value = _uiState.value.copy(statusFilter = value)
-        applyFilters()
+    fun updateStatusFilter(status: String) {
+        _uiState.update { state ->
+            val filtered = filterRows(state.rows, state.query, status)
+            state.copy(
+                statusFilter = status,
+                filteredRows = filtered,
+                count = filtered.size,
+                totalAmount = filtered.sumOf { it.amount ?: 0.0 },
+                postedCount = filtered.count { it.status.uppercase() == "POSTED" },
+                cancelledCount = filtered.count { it.status.uppercase() == "CANCELLED" }
+            )
+        }
     }
 
+    fun toggleSelection(id: Long) {
+        _uiState.update { state ->
+            val newSelection = state.selectedIds.toMutableSet()
+            if (newSelection.contains(id)) newSelection.remove(id) else newSelection.add(id)
+            state.copy(selectedIds = newSelection)
+        }
+    }
+
+    fun setCancelDialog(row: SalesRegisterRow) {
+        _uiState.update { it.copy(showCancelDialog = true, cancelRowId = row.id, cancelReason = "") }
+    }
+
+    fun updateCancelReason(reason: String) {
+        _uiState.update { it.copy(cancelReason = reason) }
+    }
+
+    fun dismissCancelDialog() {
+        _uiState.update { it.copy(showCancelDialog = false, cancelRowId = null) }
+    }
+
+    fun confirmCancel() {
+        val rowId = _uiState.value.cancelRowId ?: return
+        val reason = _uiState.value.cancelReason
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionRunning = true) }
+            try {
+                if (registerType == SalesRegisterType.INVOICE) {
+                    repository.cancelInvoice(rowId, reason)
+                } else {
+                    // TODO: Implement cancellation for other document types
+                    throw UnsupportedOperationException("Cancellation for ${registerType.displayName} is not yet implemented.")
+                }
+                _uiState.update { it.copy(isActionRunning = false, showCancelDialog = false, actionMessage = "${registerType.shortName} cancelled") }
+                refresh()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isActionRunning = false, actionMessage = "Error: ${e.message}") }
+            }
+        }
+    }
+
+    fun deleteInvoice(saleId: Long) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionRunning = true) }
+            try {
+                repository.deleteInvoice(saleId)
+                _uiState.update { it.copy(isActionRunning = false, actionMessage = "Invoice moved to Deleted.") }
+                refresh()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isActionRunning = false, actionMessage = "Error: ${e.message}") }
+            }
+        }
+    }
 
     fun clearActionMessage() {
-        _actionMessage.value = null
+        _uiState.update { it.copy(actionMessage = null) }
     }
 
-    fun cancelInvoice(
-        row: SalesRegisterRow,
-        reason: String
-    ) {
-
-        if (registerType != SalesRegisterType.INVOICE) {
-            _actionMessage.value =
-                "Cancellation is currently available only for Sales Invoices."
-            return
-        }
-
-        if (
-            row.status.trim().equals(
-                other = "CANCELLED",
-                ignoreCase = true
-            )
-        ) {
-            _actionMessage.value =
-                "This Sales Invoice is already cancelled."
-            return
-        }
-
-        val normalizedReason =
-            reason.trim()
-
-        if (normalizedReason.isBlank()) {
-            _actionMessage.value =
-                "Cancellation reason is required."
-            return
-        }
-
-        viewModelScope.launch {
-
-            _isActionRunning.value = true
-            _actionMessage.value = null
-
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    salesRepository.cancelSale(
-                        saleId = row.id,
-                        cancellationReason = normalizedReason
-                    )
-                }
-            }
-                .onSuccess {
-                    _actionMessage.value =
-                        "Sales Invoice ${row.documentNumber} cancelled successfully."
-                    refresh()
-                }
-                .onFailure {
-                    _actionMessage.value =
-                        it.message ?: "Unable to cancel Sales Invoice."
-                }
-
-            _isActionRunning.value = false
-        }
+    fun update(block: (SalesRegisterUiState) -> SalesRegisterUiState) {
+        _uiState.update(block)
     }
 
-    private fun applyFilters() {
-        val q = _uiState.value.query.trim()
-        val status = _uiState.value.statusFilter
-        val filtered = allRows.filter { row ->
-            val searchOk = q.isBlank() ||
-                    row.documentNumber.contains(q, true) ||
-                    row.customerName.contains(q, true) ||
-                    row.documentDate.contains(q, true) ||
-                    row.status.contains(q, true) ||
-                    row.secondaryInfo.contains(q, true)
-            val statusOk = status == "ALL" || row.status.equals(status, true)
-            searchOk && statusOk
-        }
-        _uiState.value = _uiState.value.copy(
-            isLoading = false,
-            rows = filtered,
-            errorMessage = null
-        )
+    fun exportPdfAndShare(context: Context) {
+        SalesRegisterExportSuite.exportPdfAndShare(context, registerType.displayName, _uiState.value.filteredRows)
     }
 
-    private fun loadRows(): List<SalesRegisterRow> {
-        val sql = when (registerType) {
-            SalesRegisterType.INVOICE ->
-                """SELECT id, invoiceNumber AS docNo, invoiceDate AS docDate,
-                   customerName, status, totalAmount AS amount, '' AS secondaryInfo
-                   FROM sales ORDER BY id DESC"""
-            SalesRegisterType.CHALLAN ->
-                """SELECT c.id, c.challanNumber AS docNo, c.challanDate AS docDate,
-                   c.customerName, c.status, NULL AS amount,
-                   (SELECT COUNT(*) FROM challan_items ci WHERE ci.challanId=c.id) || ' unit(s)' AS secondaryInfo
-                   FROM challans c ORDER BY c.id DESC"""
-            SalesRegisterType.CREDIT_NOTE ->
-                """SELECT id, creditNoteNumber AS docNo, creditNoteDate AS docDate,
-                   customerName, status, totalAmount AS amount,
-                   originalInvoiceNumber AS secondaryInfo
-                   FROM sales_credit_notes ORDER BY id DESC"""
-            SalesRegisterType.PROFORMA ->
-                """SELECT id, proformaNumber AS docNo, proformaDate AS docDate,
-                   customerName, status, totalAmount AS amount,
-                   validUntilDate AS secondaryInfo
-                   FROM proforma_invoices ORDER BY id DESC"""
-            SalesRegisterType.SAMPLE_ISSUE ->
-                """SELECT s.id, s.sampleIssueNumber AS docNo, s.sampleIssueDate AS docDate,
-                   s.customerName, s.status, NULL AS amount,
-                   (SELECT COUNT(*) FROM sample_issue_items si WHERE si.sampleIssueId=s.id) || ' unit(s)' AS secondaryInfo
-                   FROM sample_issues s ORDER BY s.id DESC"""
-        }
+    fun exportExcelAndShare(context: Context) {
+        SalesRegisterExportSuite.exportExcelAndShare(context, registerType.displayName, _uiState.value.filteredRows)
+    }
 
-        val cursor = database.openHelper.readableDatabase.query(sql)
-        return cursor.use {
-            val rows = mutableListOf<SalesRegisterRow>()
-            val idIx = it.getColumnIndexOrThrow("id")
-            val noIx = it.getColumnIndexOrThrow("docNo")
-            val dateIx = it.getColumnIndexOrThrow("docDate")
-            val customerIx = it.getColumnIndexOrThrow("customerName")
-            val statusIx = it.getColumnIndexOrThrow("status")
-            val amountIx = it.getColumnIndexOrThrow("amount")
-            val secondaryIx = it.getColumnIndexOrThrow("secondaryInfo")
-            while (it.moveToNext()) {
-                rows += SalesRegisterRow(
-                    id = it.getLong(idIx),
-                    documentNumber = it.getString(noIx).orEmpty(),
-                    documentDate = it.getString(dateIx).orEmpty(),
-                    customerName = it.getString(customerIx).orEmpty(),
-                    status = it.getString(statusIx).orEmpty(),
-                    amount = if (it.isNull(amountIx)) null else it.getDouble(amountIx),
-                    secondaryInfo = it.getString(secondaryIx).orEmpty()
-                )
-            }
-            rows
-        }
+    fun printRegister(context: Context) {
+        SalesRegisterExportSuite.print(context, registerType.displayName, _uiState.value.filteredRows)
     }
 }
 
 class SalesRegisterViewModelFactory(
-    private val database: AppDatabase,
-    private val registerType: SalesRegisterType
+    private val repository: SalesRegisterRepository,
+    private val registerType: SalesRegisterType,
+    private val currentFinancialYear: Int
 ) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(SalesRegisterViewModel::class.java)) {
-            return SalesRegisterViewModel(database, registerType) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
+        return SalesRegisterViewModel(repository, registerType, currentFinancialYear) as T
     }
 }

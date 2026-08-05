@@ -233,8 +233,9 @@ private fun PurchaseReturnDocumentFields(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             OutlinedTextField(
-                value = uiState.creditNoteNumber,
-                onValueChange = onCreditNoteNumberChange,
+                value = if (uiState.isEditMode) uiState.creditNoteNumber else "Auto-generated",
+                onValueChange = {},
+                readOnly = true,
                 label = { Text("Debit Note No. *") },
                 modifier = Modifier.weight(1f),
                 singleLine = true

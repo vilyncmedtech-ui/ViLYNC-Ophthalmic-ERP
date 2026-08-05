@@ -183,7 +183,7 @@ class PurchaseReturnSavedRegisterViewModel(
                     repository.cancelPostedPurchaseReturn(
                         purchaseReturnId =
                             purchaseReturnId,
-                        reason =
+                        cancellationReason =
                             cleanReason
                     )
 

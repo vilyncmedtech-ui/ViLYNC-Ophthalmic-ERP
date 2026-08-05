@@ -358,6 +358,12 @@ class ProductMasterRepository(
                     serialPrefix =
                         product.serialPrefix.trim().uppercase(),
 
+                    minimumStock = product.minimumStock,
+                    reorderLevel = product.reorderLevel,
+                    maximumStock = product.maximumStock,
+                    reorderQuantity = product.reorderQuantity,
+                    leadTimeDays = product.leadTimeDays,
+
                     isActive =
                         product.isActive
                 )
@@ -518,6 +524,12 @@ class ProductMasterRepository(
 
             serialPrefix =
                 entity.serialPrefix,
+
+            minimumStock = entity.minimumStock,
+            reorderLevel = entity.reorderLevel,
+            maximumStock = entity.maximumStock,
+            reorderQuantity = entity.reorderQuantity,
+            leadTimeDays = entity.leadTimeDays,
 
             isActive =
                 entity.isActive

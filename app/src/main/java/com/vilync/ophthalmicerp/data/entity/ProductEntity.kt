@@ -149,6 +149,21 @@ data class ProductEntity(
 
 
     // =========================================================
+    // INVENTORY PLANNING
+    // =========================================================
+
+    val minimumStock: Int = 0,
+
+    val reorderLevel: Int = 0,
+
+    val maximumStock: Int = 0,
+
+    val reorderQuantity: Int = 0,
+
+    val leadTimeDays: Int = 0,
+
+
+    // =========================================================
     // STATUS
     // =========================================================
 

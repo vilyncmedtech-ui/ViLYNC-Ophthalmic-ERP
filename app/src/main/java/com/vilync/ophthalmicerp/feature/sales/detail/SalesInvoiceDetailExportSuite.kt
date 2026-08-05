@@ -14,6 +14,7 @@ import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import androidx.core.content.FileProvider
+import com.vilync.ophthalmicerp.core.util.ShareUtils
 import com.vilync.ophthalmicerp.data.entity.SaleEntity
 import com.vilync.ophthalmicerp.feature.companyprofile.data.CompanyProfileEntity
 import java.io.File
@@ -34,18 +35,25 @@ object SalesInvoiceDetailExportSuite {
     private val BORDER = Color.rgb(215, 222, 232)
     private val MUTED = Color.rgb(90, 101, 115)
 
+    private fun getExportFile(context: Context, fileName: String, extension: String): File {
+        val exportDir = File(context.cacheDir, "exports")
+        if (!exportDir.exists()) exportDir.mkdirs()
+        return File(exportDir, "$fileName.$extension")
+    }
+
     fun exportPdfAndShare(
         context: Context,
         sale: SaleEntity,
         lines: List<SalesInvoiceDetailLine>,
         companyProfile: CompanyProfileEntity?
     ): Result<Unit> = runCatching {
-        val file = File(
-            context.cacheDir,
-            safeName("Sales_Invoice_${sale.invoiceNumber}") + ".pdf"
+        val file = getExportFile(
+            context,
+            safeName("Sales_Invoice_${sale.invoiceNumber}"),
+            "pdf"
         )
         writePdf(file, sale, lines, companyProfile)
-        share(context, file, "application/pdf")
+        ShareUtils.shareFile(context, file, "application/pdf", "Share Sales Invoice")
     }
 
     fun exportExcelAndShare(
@@ -53,9 +61,10 @@ object SalesInvoiceDetailExportSuite {
         sale: SaleEntity,
         lines: List<SalesInvoiceDetailLine>
     ): Result<Unit> = runCatching {
-        val file = File(
-            context.cacheDir,
-            safeName("Sales_Invoice_${sale.invoiceNumber}") + ".xls"
+        val file = getExportFile(
+            context,
+            safeName("Sales_Invoice_${sale.invoiceNumber}"),
+            "xls"
         )
 
         OutputStreamWriter(FileOutputStream(file), Charsets.UTF_8).use { writer ->
@@ -158,7 +167,7 @@ object SalesInvoiceDetailExportSuite {
             writer.write("</Workbook>")
         }
 
-        share(context, file, "application/vnd.ms-excel")
+        ShareUtils.shareFile(context, file, "application/vnd.ms-excel", "Share Sales Invoice Excel")
     }
 
     fun print(
@@ -280,7 +289,7 @@ object SalesInvoiceDetailExportSuite {
                 document.finishPage(page)
             }
 
-            FileOutputStream(file).use(document::writeTo)
+            FileOutputStream(file).use { document.writeTo(it) }
         } finally {
             document.close()
         }
@@ -626,24 +635,6 @@ object SalesInvoiceDetailExportSuite {
         if (thousand > 0) { parts += "${underHundred(thousand.toInt())} Thousand"; n %= 1_000 }
         if (n > 0) parts += underThousand(n.toInt())
         return parts.joinToString(" ")
-    }
-
-    private fun share(context: Context, file: File, mime: String) {
-        val uri = FileProvider.getUriForFile(
-            context,
-            context.packageName + ".fileprovider",
-            file
-        )
-        context.startActivity(
-            Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply {
-                    type = mime
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                },
-                "Share"
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
     }
 
     private fun amount(value: Double): String = String.format(Locale.US, "%,.2f", value)

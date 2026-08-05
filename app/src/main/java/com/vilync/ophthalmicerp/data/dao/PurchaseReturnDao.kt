@@ -689,10 +689,25 @@ interface PurchaseReturnDao {
         ORDER BY id DESC
         """
     )
-    fun getPurchaseReturnsBySupplier(
-        supplierId: Long
-    ): Flow<List<PurchaseReturnEntity>>
+    fun getPurchaseReturnsBySupplier(supplierId: Long): Flow<List<PurchaseReturnEntity>>
 
+    // =========================================================
+    // PERIOD REPORTING QUERIES
+    // =========================================================
+
+    @Query("""
+        SELECT SUM(totalAmount) FROM purchase_returns 
+        WHERE supplierId = :supplierId AND status = 'POSTED'
+          AND (substr(creditNoteDate, 7, 4) || '-' || substr(creditNoteDate, 4, 2) || '-' || substr(creditNoteDate, 1, 2)) < :startDate
+    """)
+    suspend fun getOpeningDebitNoteTotal(supplierId: Long, startDate: String): Double?
+
+    @Query("""
+        SELECT * FROM purchase_returns 
+        WHERE supplierId = :supplierId AND status = 'POSTED'
+          AND (substr(creditNoteDate, 7, 4) || '-' || substr(creditNoteDate, 4, 2) || '-' || substr(creditNoteDate, 1, 2)) BETWEEN :startDate AND :endDate
+    """)
+    suspend fun getDebitNotesForPeriod(supplierId: Long, startDate: String, endDate: String): List<PurchaseReturnEntity>
 
     // =========================================================
     // SEARCH CREDIT NOTE

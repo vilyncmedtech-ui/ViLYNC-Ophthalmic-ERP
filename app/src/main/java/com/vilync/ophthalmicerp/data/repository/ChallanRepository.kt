@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.Flow
 
 class ChallanRepository(
     private val challanDao: ChallanDao,
-    private val database: AppDatabase? = null
+    private val database: AppDatabase? = null,
+    private val numberingRepository: DocumentNumberingRepository? = null
 ) {
 
     suspend fun insertChallan(
@@ -218,8 +219,19 @@ class ChallanRepository(
                 }
             }
 
+            val finalChallanNumber =
+                numberingRepository?.getNextDocumentNumber(
+                    DocumentType.CHALLAN,
+                    challan.financialYearStart
+                ) ?: challan.challanNumber.trim()
+
             val challanId =
-                challanDao.insertChallan(challan)
+                challanDao.insertChallan(
+                    challan.copy(
+                        challanNumber = finalChallanNumber,
+                        normalizedChallanNumber = finalChallanNumber.uppercase()
+                    )
+                )
 
             require(challanId > 0L) {
                 "Challan could not be saved."
