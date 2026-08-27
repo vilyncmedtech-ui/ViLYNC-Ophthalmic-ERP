@@ -24,6 +24,7 @@ object BackupScheduler {
         val backupRequest = PeriodicWorkRequestBuilder<NightlyBackupWorker>(24, TimeUnit.HOURS)
             .setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.HOURS)
+            .setInitialDelay(1, TimeUnit.HOURS) // GRACE PERIOD: Prevent immediate empty backup after setup
             .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(

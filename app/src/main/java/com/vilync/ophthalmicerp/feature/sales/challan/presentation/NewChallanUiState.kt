@@ -11,6 +11,7 @@ data class NewChallanUiState(
     val challanNumber: String = "",
     val challanDate: String = "",
     val financialYearStart: Int = 0,
+    val asLibrary: Boolean = false,
     val remarks: String = "",
 
     val serialQuery: String = "",
@@ -24,6 +25,10 @@ data class NewChallanUiState(
 
     val isSaving: Boolean = false,
     val savedChallanId: Long? = null,
+
+    val isEditMode: Boolean = false,
+    val editingChallanId: Long? = null,
+    val isLoading: Boolean = false,
 
     val errorMessage: String? = null,
     val successMessage: String? = null

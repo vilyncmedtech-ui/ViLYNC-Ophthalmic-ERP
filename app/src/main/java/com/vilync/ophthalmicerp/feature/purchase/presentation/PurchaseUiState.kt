@@ -44,6 +44,7 @@ data class PurchaseUiState(
     val isLoadingSuppliers: Boolean = false,
     val isHeaderConfirmed: Boolean = false,
     val isSaving: Boolean = false,
+    val status: String = "POSTED",
 
     /*
      * True once the current version has been saved. It is reset as soon

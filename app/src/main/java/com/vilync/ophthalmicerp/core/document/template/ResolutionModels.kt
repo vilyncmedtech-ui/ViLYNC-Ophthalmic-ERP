@@ -1,7 +1,7 @@
 package com.vilync.ophthalmicerp.core.document.template
 
-import com.vilync.ophthalmicerp.feature.designer.domain.model.DesignerDocumentType
-import com.vilync.ophthalmicerp.feature.designer.domain.model.OutputType
+import com.vilync.ophthalmicerp.core.document.domain.DesignerDocumentType
+import com.vilync.ophthalmicerp.core.document.domain.OutputType
 
 /**
  * Priority levels for template resolution.

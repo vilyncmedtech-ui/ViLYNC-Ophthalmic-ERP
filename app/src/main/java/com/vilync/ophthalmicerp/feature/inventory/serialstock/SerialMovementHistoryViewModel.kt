@@ -138,6 +138,9 @@ class SerialMovementHistoryViewModel(
                         serialNumber =
                             serialStock.serialNumber,
 
+                        serialPrefix =
+                            serialStock.serialPrefix,
+
                         productName =
                             serialStock.productName,
 

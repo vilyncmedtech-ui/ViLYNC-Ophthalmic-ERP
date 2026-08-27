@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.vilync.ophthalmicerp.data.entity.ChallanEntity
 import com.vilync.ophthalmicerp.data.entity.ChallanItemEntity
+import com.vilync.ophthalmicerp.feature.sales.reports.data.LensLibraryRawRow
 import kotlinx.coroutines.flow.Flow
 
 
@@ -103,10 +104,6 @@ interface ChallanDao {
     // =========================================================
     // CUSTOMER PENDING CHALLANS
     // =========================================================
-    //
-    // Only Challans that still contain at least one pending
-    // physical lens are returned.
-    // =========================================================
 
     @Query(
         """
@@ -127,9 +124,6 @@ interface ChallanDao {
 
     // =========================================================
     // CUSTOMER PENDING CHALLAN ITEMS
-    // =========================================================
-    //
-    // Used by New Sales Invoice -> SETTLE CHALLAN.
     // =========================================================
 
     @Query(
@@ -153,13 +147,7 @@ interface ChallanDao {
 
 
     // =========================================================
-    // EXACT SERIAL SEARCH — SELECTED CUSTOMER
-    // =========================================================
-    //
-    // Exact full serial gets first priority in Smart Search.
-    // Example:
-    //
-    // LMDE232123 -> exact LMDE232123
+    // EXACT SERIAL SEARCH
     // =========================================================
 
     @Query(
@@ -183,20 +171,7 @@ interface ChallanDao {
 
 
     // =========================================================
-    // SMART SUFFIX SERIAL SEARCH — SELECTED CUSTOMER
-    // =========================================================
-    //
-    // Example:
-    //
-    // Search:
-    // 232123
-    //
-    // Can return:
-    // LMDE232123
-    // LMMS232123
-    //
-    // Multiple matches are intentionally returned so UI can
-    // ask the user which physical lens is correct.
+    // SMART SUFFIX SERIAL SEARCH
     // =========================================================
 
     @Query(
@@ -237,10 +212,6 @@ interface ChallanDao {
 
     // =========================================================
     // MARK PHYSICAL CHALLAN LENS AS INVOICED
-    // =========================================================
-    //
-    // This method must only be called from the successful
-    // Sales settlement database transaction.
     // =========================================================
 
     @Query(
@@ -355,4 +326,60 @@ interface ChallanDao {
         normalizedChallanNumber: String,
         financialYearStart: Int
     ): Boolean
+
+    // =========================================================
+    // LENS LIBRARY STATUS REPORT QUERY
+    // =========================================================
+
+    @Query(
+        """
+        SELECT 
+            ci.productId,
+            ci.productName,
+            ci.power,
+            ci.settlementStatus,
+            ci.serialNumber,
+            ci.expiryDate,
+            c.id as challanId,
+            c.challanNumber,
+            c.challanDate,
+            ci.saleId,
+            s.invoiceNumber,
+            s.invoiceDate
+        FROM challan_items ci
+        INNER JOIN challans c ON ci.challanId = c.id
+        LEFT JOIN sales s ON ci.saleId = s.id
+        WHERE c.customerId = :customerId
+          AND c.asLibrary = 1
+          AND c.status != 'CANCELLED'
+          AND (substr(c.challanDate, 7, 4) || '-' || substr(c.challanDate, 4, 2) || '-' || substr(c.challanDate, 1, 2)) 
+              BETWEEN :startDate AND :endDate
+        ORDER BY ci.productName ASC, ci.power ASC, c.challanDate ASC
+        """
+    )
+    suspend fun getLensLibraryReportData(
+        customerId: Long,
+        startDate: String,
+        endDate: String
+    ): List<LensLibraryRawRow>
+
+
+    // =========================================================
+    // PARTIES WITH LIBRARY CHALLANS
+    // =========================================================
+
+    @Query(
+        """
+        SELECT DISTINCT p.*
+        FROM parties p
+        INNER JOIN challans c ON c.customerId = p.id
+        WHERE c.asLibrary = 1
+          AND c.status != 'CANCELLED'
+          AND p.isActive = 1
+        ORDER BY p.partyName COLLATE NOCASE ASC
+        """
+    )
+    fun getPartiesWithLibraryChallans(): Flow<List<com.vilync.ophthalmicerp.master.party.data.PartyEntity>>
+    @Query("DELETE FROM challan_items WHERE challanId = :challanId AND settlementStatus = 'PENDING'")
+    suspend fun deletePendingItemsByChallanId(challanId: Long)
 }

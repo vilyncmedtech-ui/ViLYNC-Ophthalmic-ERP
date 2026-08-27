@@ -52,7 +52,11 @@ class NightlyBackupWorker(
             )
 
             // 1. Initialize Drive Client
-            backupUseCase.initializeDriveService(email)
+            val initResult = backupUseCase.initializeDriveService(email)
+            if (initResult.isFailure) {
+                Log.e(TAG, "Failed to initialize Drive service: ${initResult.exceptionOrNull()?.message}")
+                return Result.retry()
+            }
 
             // 2. Perform Workflow (Integrity + Temp Copy + Metadata)
             val workflowResult = backupUseCase.performBackupWorkflow()

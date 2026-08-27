@@ -22,7 +22,8 @@ import androidx.room.PrimaryKey
                 "normalizedInvoiceNumber"
             ],
             unique = true
-        )
+        ),
+        Index(value = ["status"])
     ]
 )
 data class PurchaseEntity(
@@ -157,5 +158,8 @@ data class PurchaseEntity(
 
     val igstAmount: Double = 0.0,
 
-    val grandTotal: Double = 0.0
+    val grandTotal: Double = 0.0,
+
+    @ColumnInfo(defaultValue = "'POSTED'")
+    val status: String = "POSTED"
 )

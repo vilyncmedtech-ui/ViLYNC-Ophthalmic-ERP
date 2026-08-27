@@ -1,5 +1,10 @@
 package com.vilync.ophthalmicerp.core.document.engine
 
+import com.google.zxing.BarcodeFormat as ZxingFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
+import java.util.EnumMap
 import java.util.Locale
 
 /**
@@ -50,18 +55,31 @@ class DefaultQrCodeService : QrCodeService {
     override fun encode(content: String, errorCorrection: QrErrorCorrection): EncodingResult {
         if (content.isBlank()) return EncodingResult.Failure("Content is empty")
         
-        // QR Payload Size Validation (Approximate for Phase 1)
-        if (content.length > 2000) return EncodingResult.Failure("Content too large for QR Code")
-        
-        // Mock Encoding (21x21 matrix)
-        val size = 21
-        val bits = BooleanArray(size * size)
-        for (y in 0 until size) {
-            for (x in 0 until size) {
-                bits[y * size + x] = (x + y) % 2 == 0
+        try {
+            val hints = EnumMap<EncodeHintType, Any>(EncodeHintType::class.java)
+            hints[EncodeHintType.ERROR_CORRECTION] = when (errorCorrection) {
+                QrErrorCorrection.LOW -> ErrorCorrectionLevel.L
+                QrErrorCorrection.MEDIUM -> ErrorCorrectionLevel.M
+                QrErrorCorrection.QUARTILE -> ErrorCorrectionLevel.Q
+                QrErrorCorrection.HIGH -> ErrorCorrectionLevel.H
             }
+            hints[EncodeHintType.MARGIN] = 0
+
+            val writer = QRCodeWriter()
+            val bitMatrix = writer.encode(content, ZxingFormat.QR_CODE, 0, 0, hints)
+            
+            val w = bitMatrix.width
+            val h = bitMatrix.height
+            val bits = BooleanArray(w * h)
+            for (y in 0 until h) {
+                for (x in 0 until w) {
+                    bits[y * w + x] = bitMatrix.get(x, y)
+                }
+            }
+            
+            return EncodingResult.Success(EncodedSymbol(w, h, bits))
+        } catch (e: Exception) {
+            return EncodingResult.Failure("QR Encoding failed: ${e.message}")
         }
-        
-        return EncodingResult.Success(EncodedSymbol(size, size, bits))
     }
 }

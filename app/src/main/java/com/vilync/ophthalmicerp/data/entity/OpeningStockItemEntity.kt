@@ -43,11 +43,17 @@ data class OpeningStockItemEntity(
 
     val batchNumber: String = "",
 
+    val serialNumber: String = "",
+
+    val rawSerial: String = "",
+
     val expiryDate: String = "",
 
     val quantity: Int,
 
     val unitCost: Double = 0.0,
+
+    val gstPercent: Double = 0.0,
 
     val totalCost: Double = 0.0
 )

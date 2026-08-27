@@ -57,9 +57,6 @@ private val NavyDark =
 private val Gold =
     Color(0xFFD4AF37)
 
-private val GoldSoft =
-    Color(0xFFFFFBF0)
-
 private val TextPrimary =
     Color(0xFF17233B)
 
@@ -471,7 +468,7 @@ private fun SerialSummaryCard(
 
         shape =
             RoundedCornerShape(
-                22.dp
+                16.dp
             ),
 
         colors =
@@ -491,11 +488,14 @@ private fun SerialSummaryCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(18.dp)
+                    .padding(
+                        horizontal = 14.dp,
+                        vertical = 12.dp
+                    )
         ) {
 
             // =================================================
-            // PRODUCT + STATUS
+            // ROW 1: PRODUCT NAME (MODEL) + STATUS
             // =================================================
 
             Row(
@@ -503,86 +503,47 @@ private fun SerialSummaryCard(
                     Modifier.fillMaxWidth(),
 
                 verticalAlignment =
-                    Alignment.Top
+                    Alignment.CenterVertically
             ) {
 
-                Column(
-                    modifier =
-                        Modifier.weight(1f)
-                ) {
-
-                    Text(
-                        text =
-                            uiState.productName
-                                .ifBlank {
-                                    "Serial Stock"
-                                },
-
-                        fontSize =
-                            20.sp,
-
-                        fontWeight =
-                            FontWeight.Bold,
-
-                        color =
-                            NavyDark,
-
-                        maxLines =
-                            1,
-
-                        overflow =
-                            TextOverflow.Ellipsis
-                    )
-
-
-                    val secondary =
-                        listOf(
-                            uiState.brandName,
-                            uiState.model,
-                            uiState.category
-                        )
-                            .filter {
-                                it.isNotBlank()
-                            }
-                            .joinToString(
-                                separator =
-                                    "  •  "
-                            )
-
-
+                val displayName =
                     if (
-                        secondary.isNotBlank()
+                        uiState.model.isNotBlank()
                     ) {
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(5.dp)
-                        )
-
-
-                        Text(
-                            text =
-                                secondary,
-
-                            fontSize =
-                                12.sp,
-
-                            color =
-                                TextSecondary,
-
-                            maxLines =
-                                1,
-
-                            overflow =
-                                TextOverflow.Ellipsis
-                        )
+                        "${uiState.productName} (${uiState.model})"
+                    } else {
+                        uiState.productName
+                            .ifBlank {
+                                "Serial Inventory"
+                            }
                     }
-                }
 
 
-                Spacer(
-                    modifier =
-                        Modifier.width(12.dp)
+                Text(
+                    text =
+                        displayName,
+
+                    fontSize =
+                        15.sp,
+
+                    fontWeight =
+                        FontWeight.Bold,
+
+                    color =
+                        NavyDark,
+
+                    maxLines =
+                        1,
+
+                    overflow =
+                        TextOverflow.Ellipsis
+                )
+
+
+                Text(
+                    text = "  ·  ",
+                    fontSize = 14.sp,
+                    color = Border
                 )
 
 
@@ -595,260 +556,199 @@ private fun SerialSummaryCard(
 
             Spacer(
                 modifier =
-                    Modifier.height(18.dp)
+                    Modifier.height(8.dp)
             )
 
 
             // =================================================
-            // SERIAL + POWER
+            // ROW 2: SERIAL · INVOICE · POWER
             // =================================================
 
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .background(
-                            color =
-                                GoldSoft,
-
-                            shape =
-                                RoundedCornerShape(
-                                    16.dp
-                                )
-                        )
-                        .border(
-                            width =
-                                1.dp,
-
-                            color =
-                                Color(
-                                    0xFFE4C76B
-                                ),
-
-                            shape =
-                                RoundedCornerShape(
-                                    16.dp
-                                )
-                        )
-                        .padding(
-                            horizontal = 16.dp,
-                            vertical = 14.dp
-                        )
-            ) {
-
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
+            val displaySerial =
+                if (
+                    uiState.serialPrefix.isNotBlank() &&
+                    !uiState.serialNumber.startsWith(
+                        uiState.serialPrefix,
+                        ignoreCase = true
+                    )
                 ) {
-
-                    Column(
-                        modifier =
-                            Modifier.weight(1f)
-                    ) {
-
-                        Text(
-                            text =
-                                "SERIAL NUMBER",
-
-                            fontSize =
-                                9.sp,
-
-                            fontWeight =
-                                FontWeight.SemiBold,
-
-                            color =
-                                TextSecondary
-                        )
-
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(5.dp)
-                        )
-
-
-                        Text(
-                            text =
-                                uiState.serialNumber
-                                    .ifBlank {
-                                        "—"
-                                    },
-
-                            fontSize =
-                                18.sp,
-
-                            fontWeight =
-                                FontWeight.Bold,
-
-                            color =
-                                NavyDark
-                        )
-                    }
-
-
-                    if (
-                        uiState.power.isNotBlank()
-                    ) {
-
-                        Column(
-                            horizontalAlignment =
-                                Alignment.End
-                        ) {
-
-                            Text(
-                                text =
-                                    "POWER",
-
-                                fontSize =
-                                    9.sp,
-
-                                fontWeight =
-                                    FontWeight.SemiBold,
-
-                                color =
-                                    TextSecondary
-                            )
-
-
-                            Spacer(
-                                modifier =
-                                    Modifier.height(5.dp)
-                            )
-
-
-                            Text(
-                                text =
-                                    uiState.power,
-
-                                fontSize =
-                                    18.sp,
-
-                                fontWeight =
-                                    FontWeight.Bold,
-
-                                color =
-                                    Blue
-                            )
+                    "${uiState.serialPrefix} ${uiState.serialNumber}"
+                } else {
+                    uiState.serialNumber
+                        .ifBlank {
+                            "—"
                         }
-                    }
                 }
-            }
 
-
-            Spacer(
-                modifier =
-                    Modifier.height(14.dp)
-            )
-
-
-            // =================================================
-            // BATCH / EXPIRY / RECEIVED
-            // =================================================
 
             Row(
                 modifier =
                     Modifier.fillMaxWidth(),
 
-                horizontalArrangement =
-                    Arrangement.spacedBy(
-                        10.dp
-                    )
+                verticalAlignment =
+                    Alignment.CenterVertically
             ) {
 
-                HistoryInfoBox(
-                    modifier =
-                        Modifier.weight(1f),
+                Text(
+                    text = "Serial: ",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
 
-                    label =
-                        "Batch",
-
-                    value =
-                        uiState.batchNumber
-                            .ifBlank {
-                                "—"
-                            }
+                Text(
+                    text = displaySerial,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
                 )
 
 
-                HistoryInfoBox(
-                    modifier =
-                        Modifier.weight(1f),
-
-                    label =
-                        "Expiry",
-
-                    value =
-                        formatExpiryForDisplay(
-                            uiState.expiryDate
-                        )
+                Text(
+                    text = "  ·  ",
+                    fontSize = 12.sp,
+                    color = Border
                 )
 
 
-                HistoryInfoBox(
-                    modifier =
-                        Modifier.weight(1f),
+                Text(
+                    text = "Invoice: ",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
 
-                    label =
-                        "Received",
-
-                    value =
-                        uiState.receivedDate
+                Text(
+                    text =
+                        uiState.purchaseInvoiceNumber
                             .ifBlank {
                                 "—"
-                            }
+                            },
+
+                    modifier =
+                        Modifier.weight(1f, fill = false),
+
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+
+                Text(
+                    text = "  ·  ",
+                    fontSize = 12.sp,
+                    color = Border
+                )
+
+
+                Text(
+                    text = "Power: ",
+                    fontSize = 12.sp,
+                    color = TextSecondary
+                )
+
+                Text(
+                    text =
+                        uiState.power
+                            .ifBlank {
+                                "—"
+                            },
+
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Blue
                 )
             }
 
 
             Spacer(
                 modifier =
-                    Modifier.height(14.dp)
+                    Modifier.height(6.dp)
+            )
+
+
+            // =================================================
+            // ROW 3: BATCH · EXPIRY · RECEIVED
+            // =================================================
+
+            val row3Text =
+                listOf(
+                    "Batch: ${uiState.batchNumber.ifBlank { "—" }}",
+                    "Expiry: ${formatExpiryForDisplay(uiState.expiryDate)}",
+                    "Received: ${uiState.receivedDate.ifBlank { "—" }}"
+                ).joinToString(
+                    separator = "  ·  "
+                )
+
+
+            Text(
+                text =
+                    row3Text,
+
+                fontSize =
+                    12.sp,
+
+                color =
+                    TextPrimary,
+
+                fontWeight =
+                    FontWeight.Medium
+            )
+
+
+            Spacer(
+                modifier =
+                    Modifier.height(8.dp)
             )
 
 
             HorizontalDivider(
                 color =
-                    Border
+                    Border,
+
+                thickness =
+                    0.5.dp
             )
 
 
             Spacer(
                 modifier =
-                    Modifier.height(14.dp)
+                    Modifier.height(8.dp)
             )
 
 
-            HistoryDetailLine(
-                label =
-                    "Supplier",
+            // =================================================
+            // ROW 4: SUPPLIER
+            // =================================================
 
-                value =
-                    uiState.supplierName
-                        .ifBlank {
-                            "—"
-                        }
-            )
-
-
-            Spacer(
+            Row(
                 modifier =
-                    Modifier.height(9.dp)
-            )
+                    Modifier.fillMaxWidth()
+            ) {
 
+                Text(
+                    text = "Supplier: ",
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
 
-            HistoryDetailLine(
-                label =
-                    "Purchase Invoice",
+                Text(
+                    text =
+                        uiState.supplierName
+                            .ifBlank {
+                                "—"
+                            },
 
-                value =
-                    uiState.purchaseInvoiceNumber
-                        .ifBlank {
-                            "—"
-                        }
-            )
+                    fontSize =
+                        13.sp,
+
+                    fontWeight =
+                        FontWeight.SemiBold,
+
+                    color =
+                        TextPrimary
+                )
+            }
         }
     }
 }
@@ -883,7 +783,7 @@ private fun MovementTimelineCard(
 
         shape =
             RoundedCornerShape(
-                18.dp
+                14.dp
             ),
 
         colors =
@@ -903,7 +803,10 @@ private fun MovementTimelineCard(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(
+                        horizontal = 14.dp,
+                        vertical = 12.dp
+                    ),
 
             verticalAlignment =
                 Alignment.Top
@@ -922,7 +825,7 @@ private fun MovementTimelineCard(
                 Box(
                     modifier =
                         Modifier
-                            .size(16.dp)
+                            .size(12.dp)
                             .background(
                                 color =
                                     movementColour(
@@ -936,7 +839,7 @@ private fun MovementTimelineCard(
                             )
                             .border(
                                 width =
-                                    3.dp,
+                                    2.dp,
 
                                 color =
                                     movementBackgroundColour(
@@ -955,10 +858,10 @@ private fun MovementTimelineCard(
                     modifier =
                         Modifier
                             .padding(
-                                top = 5.dp
+                                top = 4.dp
                             )
-                            .width(2.dp)
-                            .height(74.dp)
+                            .width(1.5.dp)
+                            .height(30.dp)
                             .background(
                                 Border
                             )
@@ -968,12 +871,12 @@ private fun MovementTimelineCard(
 
             Spacer(
                 modifier =
-                    Modifier.width(14.dp)
+                    Modifier.width(12.dp)
             )
 
 
             // =================================================
-            // MOVEMENT INFORMATION
+            // COMPACT MOVEMENT INFORMATION
             // =================================================
 
             Column(
@@ -981,26 +884,24 @@ private fun MovementTimelineCard(
                     Modifier.weight(1f)
             ) {
 
+                // ---------------------------------------------
+                // LINE 1: TITLE · DATE · STATUS
+                // ---------------------------------------------
+
                 Row(
                     modifier =
                         Modifier.fillMaxWidth(),
 
-                    horizontalArrangement =
-                        Arrangement.SpaceBetween,
-
                     verticalAlignment =
-                        Alignment.Top
+                        Alignment.CenterVertically
                 ) {
 
                     Text(
                         text =
                             movementTitle,
 
-                        modifier =
-                            Modifier.weight(1f),
-
                         fontSize =
-                            15.sp,
+                            13.sp,
 
                         fontWeight =
                             FontWeight.Bold,
@@ -1012,50 +913,46 @@ private fun MovementTimelineCard(
                     )
 
 
-                    Spacer(
-                        modifier =
-                            Modifier.width(10.dp)
+                    Text(
+                        text =
+                            "  ·  ",
+
+                        fontSize =
+                            12.sp,
+
+                        color =
+                            Border
                     )
 
 
                     Text(
                         text =
-                            movement.movementDate
-                                .ifBlank {
-                                    "—"
-                                },
+                            movement.movementDate,
 
                         fontSize =
                             11.sp,
 
-                        fontWeight =
-                            FontWeight.Medium,
-
                         color =
                             TextSecondary
                     )
-                }
 
 
-                Spacer(
-                    modifier =
-                        Modifier.height(8.dp)
-                )
-
-
-                // =============================================
-                // STATUS TRANSITION
-                // =============================================
-
-                if (
-                    movement.fromStatus.isNotBlank() ||
-                    movement.toStatus.isNotBlank()
-                ) {
-
-                    Row(
-                        verticalAlignment =
-                            Alignment.CenterVertically
+                    if (
+                        movement.fromStatus.isNotBlank() ||
+                        movement.toStatus.isNotBlank()
                     ) {
+
+                        Text(
+                            text =
+                                "  ·  ",
+
+                            fontSize =
+                                12.sp,
+
+                            color =
+                                Border
+                        )
+
 
                         Text(
                             text =
@@ -1069,7 +966,7 @@ private fun MovementTimelineCard(
                                     },
 
                             fontSize =
-                                11.sp,
+                                10.sp,
 
                             color =
                                 TextSecondary
@@ -1077,17 +974,10 @@ private fun MovementTimelineCard(
 
 
                         Text(
-                            text =
-                                "  →  ",
-
-                            fontSize =
-                                12.sp,
-
-                            fontWeight =
-                                FontWeight.Bold,
-
-                            color =
-                                Gold
+                            text = " → ",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Gold
                         )
 
 
@@ -1103,7 +993,7 @@ private fun MovementTimelineCard(
                                     },
 
                             fontSize =
-                                11.sp,
+                                10.sp,
 
                             fontWeight =
                                 FontWeight.Bold,
@@ -1112,25 +1002,28 @@ private fun MovementTimelineCard(
                                 TextPrimary
                         )
                     }
-
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(8.dp)
-                    )
                 }
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(4.dp)
+                )
+
+
+                // ---------------------------------------------
+                // LINE 2: PARTY · REF · REMARKS
+                // ---------------------------------------------
+
+                val details =
+                    mutableListOf<String>()
 
 
                 if (
                     movement.partyName.isNotBlank()
                 ) {
-
-                    MovementDetail(
-                        label =
-                            "Party",
-
-                        value =
-                            movement.partyName
+                    details.add(
+                        "Party: ${movement.partyName}"
                     )
                 }
 
@@ -1138,13 +1031,8 @@ private fun MovementTimelineCard(
                 if (
                     movement.referenceNumber.isNotBlank()
                 ) {
-
-                    MovementDetail(
-                        label =
-                            "Reference",
-
-                        value =
-                            movement.referenceNumber
+                    details.add(
+                        "Ref: ${movement.referenceNumber}"
                     )
                 }
 
@@ -1152,215 +1040,37 @@ private fun MovementTimelineCard(
                 if (
                     movement.remarks.isNotBlank()
                 ) {
+                    details.add(
+                        "Remarks: ${movement.remarks}"
+                    )
+                }
 
-                    MovementDetail(
-                        label =
-                            "Remarks",
 
-                        value =
-                            movement.remarks
+                if (
+                    details.isNotEmpty()
+                ) {
+
+                    Text(
+                        text =
+                            details.joinToString(
+                                separator = "  ·  "
+                            ),
+
+                        fontSize =
+                            11.sp,
+
+                        color =
+                            TextSecondary,
+
+                        maxLines =
+                            2,
+
+                        overflow =
+                            TextOverflow.Ellipsis
                     )
                 }
             }
         }
-    }
-}
-
-
-// =============================================================
-// MOVEMENT DETAIL
-// =============================================================
-
-@Composable
-private fun MovementDetail(
-
-    label: String,
-
-    value: String
-
-) {
-
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(
-                    top = 3.dp
-                )
-    ) {
-
-        Text(
-            text =
-                "$label:",
-
-            modifier =
-                Modifier.width(78.dp),
-
-            fontSize =
-                11.sp,
-
-            color =
-                TextSecondary
-        )
-
-
-        Text(
-            text =
-                value,
-
-            modifier =
-                Modifier.weight(1f),
-
-            fontSize =
-                11.sp,
-
-            fontWeight =
-                FontWeight.Medium,
-
-            color =
-                TextPrimary
-        )
-    }
-}
-
-
-// =============================================================
-// INFO BOX
-// =============================================================
-
-@Composable
-private fun HistoryInfoBox(
-
-    modifier: Modifier,
-
-    label: String,
-
-    value: String
-
-) {
-
-    Box(
-        modifier =
-            modifier
-                .background(
-                    color =
-                        SoftGrey,
-
-                    shape =
-                        RoundedCornerShape(
-                            13.dp
-                        )
-                )
-                .padding(
-                    horizontal = 12.dp,
-                    vertical = 12.dp
-                )
-    ) {
-
-        Column {
-
-            Text(
-                text =
-                    label,
-
-                fontSize =
-                    9.sp,
-
-                color =
-                    TextSecondary
-            )
-
-
-            Spacer(
-                modifier =
-                    Modifier.height(5.dp)
-            )
-
-
-            Text(
-                text =
-                    value,
-
-                fontSize =
-                    12.sp,
-
-                fontWeight =
-                    FontWeight.SemiBold,
-
-                color =
-                    TextPrimary,
-
-                maxLines =
-                    1,
-
-                overflow =
-                    TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-
-// =============================================================
-// DETAIL LINE
-// =============================================================
-
-@Composable
-private fun HistoryDetailLine(
-
-    label: String,
-
-    value: String
-
-) {
-
-    Row(
-        modifier =
-            Modifier.fillMaxWidth(),
-
-        verticalAlignment =
-            Alignment.CenterVertically
-    ) {
-
-        Text(
-            text =
-                "$label:",
-
-            modifier =
-                Modifier.width(
-                    125.dp
-                ),
-
-            fontSize =
-                11.sp,
-
-            color =
-                TextSecondary
-        )
-
-
-        Text(
-            text =
-                value,
-
-            modifier =
-                Modifier.weight(1f),
-
-            fontSize =
-                12.sp,
-
-            fontWeight =
-                FontWeight.SemiBold,
-
-            color =
-                TextPrimary,
-
-            maxLines =
-                1,
-
-            overflow =
-                TextOverflow.Ellipsis
-        )
     }
 }
 

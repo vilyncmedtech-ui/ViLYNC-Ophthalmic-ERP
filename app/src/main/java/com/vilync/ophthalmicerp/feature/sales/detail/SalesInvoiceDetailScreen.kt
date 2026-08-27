@@ -30,7 +30,7 @@ private val SoftAmber = Color(0xFFFFF5DA)
 private val SoftRed = Color(0xFFFDECEC)
 private val Border = Color(0xFFDDE3EC)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SalesInvoiceDetailScreen(
     viewModel: SalesInvoiceDetailViewModel,
@@ -63,9 +63,9 @@ fun SalesInvoiceDetailScreen(
                         SalesInvoiceDetailExportSuite.exportPdfAndShare(context, it, state.lines, state.companyProfile)
                     }
                 },
-                onShare = {
+                onExcel = {
                     state.sale?.let {
-                        SalesInvoiceDetailExportSuite.exportPdfAndShare(context, it, state.lines, state.companyProfile)
+                        SalesInvoiceDetailExportSuite.exportExcelAndShare(context, it, state.lines)
                     }
                 },
                 onEdit = { state.sale?.let { onEdit(it.id) } },
@@ -111,7 +111,8 @@ fun SalesInvoiceDetailScreen(
 
                     InvoiceHeaderCard(
                         sale = sale,
-                        money = money
+                        money = money,
+                        creditNoteNumber = state.creditNoteNumber
                     )
 
                     DetailCard(
@@ -209,15 +210,20 @@ fun SalesInvoiceDetailScreen(
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.Top
                                         ) {
+                                            val displayName = if (line.productModel.isNotBlank()) {
+                                                "${line.item.productName} (${line.productModel})"
+                                            } else {
+                                                line.item.productName
+                                            }
                                             Text(
-                                                "${index + 1}. ${line.item.productName}",
+                                                "${index + 1}. $displayName",
                                                 modifier = Modifier.weight(1f),
                                                 fontWeight = FontWeight.Bold,
                                                 color = Navy
                                             )
-                                            if (line.item.hsnCode.isNotBlank()) {
+                                            if (line.hsnFromMaster.isNotBlank()) {
                                                 Text(
-                                                    "HSN: ${line.item.hsnCode}",
+                                                    "HSN: ${line.hsnFromMaster}",
                                                     fontWeight = FontWeight.SemiBold,
                                                     color = Navy
                                                 )
@@ -236,18 +242,6 @@ fun SalesInvoiceDetailScreen(
                                             )
                                         )
 
-                                        if (
-                                            line.item.batchNumber.isNotBlank() ||
-                                            line.item.lotNumber.isNotBlank()
-                                        ) {
-                                            CompactInfoRow(
-                                                leftLabel = "Batch",
-                                                leftValue = line.item.batchNumber,
-                                                rightLabel = "Lot",
-                                                rightValue = line.item.lotNumber
-                                            )
-                                        }
-
                                         if (line.lenses.isNotEmpty()) {
                                             Text(
                                                 "Serial Numbers",
@@ -255,25 +249,26 @@ fun SalesInvoiceDetailScreen(
                                                 color = Navy
                                             )
 
-                                            line.lenses.forEach { lens ->
-                                                Card(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    colors = CardDefaults.cardColors(
-                                                        containerColor = SoftLavender
-                                                    ),
-                                                    border = BorderStroke(
-                                                        1.dp,
-                                                        Gold.copy(alpha = .25f)
-                                                    )
-                                                ) {
-                                                    CompactTableRow(
-                                                        modifier = Modifier.padding(8.dp),
-                                                        cells = listOf(
-                                                            "Serial Number" to lens.serialNumber,
-                                                            "Power" to lens.power,
-                                                            "Batch" to lens.batchNumber,
-                                                            "Expiry" to lens.expiryDate
-                                                        )
+                                            FlowRow(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                line.lenses.forEach { lens ->
+                                                    SuggestionChip(
+                                                        onClick = { },
+                                                        label = { 
+                                                            Text(
+                                                                "${lens.serialNumber} ${formatExp(lens.expiryDate)}",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Medium
+                                                            ) 
+                                                        },
+                                                        colors = SuggestionChipDefaults.suggestionChipColors(
+                                                            containerColor = Color(0xFFF4F9FF),
+                                                            labelColor = Navy
+                                                        ),
+                                                        border = BorderStroke(1.dp, Color(0xFFDDEAF5))
                                                     )
                                                 }
                                             }
@@ -394,7 +389,8 @@ fun SalesInvoiceDetailScreen(
 @Composable
 private fun InvoiceHeaderCard(
     sale: SaleEntity,
-    money: NumberFormat
+    money: NumberFormat,
+    creditNoteNumber: String? = null
 ) {
     val cancelled =
         sale.status.trim().equals(
@@ -402,17 +398,39 @@ private fun InvoiceHeaderCard(
             ignoreCase = true
         )
 
+    val displayedStatus = if (!creditNoteNumber.isNullOrBlank() && sale.status == "POSTED") {
+        "FULLY RETURNED"
+    } else {
+        sale.status.replace('_', ' ')
+    }
+
     DetailCard(
         title = sale.invoiceNumber,
         background =
             if (cancelled) SoftRed else SoftBlue
     ) {
+        // Row 1: Status and Date aligned with other header fields
         CompactInfoRow(
-            leftLabel = "Invoice Date",
-            leftValue = sale.invoiceDate,
-            rightLabel = "Status",
-            rightValue = sale.status.replace('_', ' ')
+            leftLabel = "Status",
+            leftValue = displayedStatus,
+            rightLabel = "Invoice Date",
+            rightValue = sale.invoiceDate,
+            leftValueColor = if (displayedStatus == "FULLY RETURNED") Color(0xFFB42318) else Color.Unspecified,
+            leftValueFontWeight = if (displayedStatus == "FULLY RETURNED") FontWeight.Bold else FontWeight.Normal
         )
+        
+        // Row 2: Credit Note No. (aligned under Status)
+        if (!creditNoteNumber.isNullOrBlank()) {
+            CompactInfoRow(
+                leftLabel = "Credit Note No.",
+                leftValue = creditNoteNumber,
+                rightLabel = "",
+                rightValue = "",
+                leftValueColor = Color(0xFFB42318),
+                leftValueFontWeight = FontWeight.Bold
+            )
+        }
+        
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -465,7 +483,11 @@ private fun CompactInfoRow(
     leftLabel: String,
     leftValue: String,
     rightLabel: String,
-    rightValue: String
+    rightValue: String,
+    leftValueColor: Color = Color.Unspecified,
+    leftValueFontWeight: FontWeight = FontWeight.Normal,
+    rightValueColor: Color = Color.Unspecified,
+    rightValueFontWeight: FontWeight = FontWeight.Normal
 ) {
     if (leftValue.isBlank() && rightValue.isBlank()) return
 
@@ -477,12 +499,16 @@ private fun CompactInfoRow(
         CompactInfoCell(
             modifier = Modifier.weight(1f),
             label = leftLabel,
-            value = leftValue
+            value = leftValue,
+            valueColor = leftValueColor,
+            valueFontWeight = leftValueFontWeight
         )
         CompactInfoCell(
             modifier = Modifier.weight(1f),
             label = rightLabel,
-            value = rightValue
+            value = rightValue,
+            valueColor = rightValueColor,
+            valueFontWeight = rightValueFontWeight
         )
     }
 }
@@ -491,7 +517,9 @@ private fun CompactInfoRow(
 private fun CompactInfoCell(
     modifier: Modifier,
     label: String,
-    value: String
+    value: String,
+    valueColor: Color = Color.Unspecified,
+    valueFontWeight: FontWeight = FontWeight.Normal
 ) {
     if (value.isBlank()) {
         Box(modifier = modifier)
@@ -509,7 +537,9 @@ private fun CompactInfoCell(
             color = Navy
         )
         Text(
-            value,
+            text = value,
+            color = valueColor,
+            fontWeight = valueFontWeight,
             modifier = Modifier.weight(1f)
         )
     }
@@ -620,3 +650,8 @@ private fun formatNumber(value: Double): String =
     } else {
         String.format(Locale.US, "%.2f", value)
     }
+
+private fun formatExp(v: String): String {
+    val t = v.trim()
+    return if (t.length == 4 && t.all { it.isDigit() }) "${t.substring(0, 2)}/${t.substring(2, 4)}" else t
+}

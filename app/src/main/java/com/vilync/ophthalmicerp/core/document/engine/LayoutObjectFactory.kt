@@ -1,6 +1,6 @@
 package com.vilync.ophthalmicerp.core.document.engine
 
-import com.vilync.ophthalmicerp.feature.designer.domain.model.JSON.TemplateLayout
+import com.vilync.ophthalmicerp.core.document.domain.TemplateLayout
 
 /**
  * Result of the layout object factory transformation.

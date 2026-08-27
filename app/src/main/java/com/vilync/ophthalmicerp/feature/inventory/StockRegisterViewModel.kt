@@ -46,14 +46,19 @@ class StockRegisterViewModel(
             val normalizedQuery =
                 query.trim()
 
+            // 1. Filter out rows where all four metrics are zero
+            val activeRows = rows.filter { row ->
+                row.purchasedQuantity > 0 ||
+                        row.soldQuantity > 0 ||
+                        row.purchaseReturnQuantity > 0 ||
+                        row.availableQuantity > 0
+            }
+
+            // 2. Apply Search Filter
             if (normalizedQuery.isBlank()) {
-
-                rows
-
+                activeRows
             } else {
-
-                rows.filter { row ->
-
+                activeRows.filter { row ->
                     row.productName.contains(
                         normalizedQuery,
                         ignoreCase = true

@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
@@ -26,7 +27,8 @@ fun PartySearchField(
     allParties: List<PartyMaster>,
     onPartySelected: (PartyMaster) -> Unit,
     modifier: Modifier = Modifier,
-    readOnly: Boolean = false
+    readOnly: Boolean = false,
+    textStyle: TextStyle = LocalTextStyle.current
 ) {
     var expanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf(selectedParty?.partyName ?: "") }
@@ -52,6 +54,7 @@ fun PartySearchField(
             label = { Text(label, fontSize = 11.sp) },
             modifier = Modifier.fillMaxWidth(),
             readOnly = readOnly,
+            textStyle = textStyle,
             trailingIcon = {
                 if (!readOnly) {
                     IconButton(onClick = { expanded = !expanded }) {

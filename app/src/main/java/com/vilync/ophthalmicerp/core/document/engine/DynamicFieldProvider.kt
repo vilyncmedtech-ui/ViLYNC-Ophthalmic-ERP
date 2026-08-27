@@ -1,6 +1,6 @@
 package com.vilync.ophthalmicerp.core.document.engine
 
-import com.vilync.ophthalmicerp.feature.designer.domain.model.DesignerDocumentType
+import com.vilync.ophthalmicerp.core.document.domain.DesignerDocumentType
 
 /**
  * Contract for ERP modules to provide business data for document templates.

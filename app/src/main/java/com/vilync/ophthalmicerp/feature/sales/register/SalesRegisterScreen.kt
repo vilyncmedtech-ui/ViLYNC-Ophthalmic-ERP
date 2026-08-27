@@ -446,6 +446,16 @@ fun SalesRegisterRowItem(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                if (!row.creditNoteNumber.isNullOrBlank()) {
+                    Text(
+                        text = "Credit Note: ${row.creditNoteNumber}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFB42318),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             Column(

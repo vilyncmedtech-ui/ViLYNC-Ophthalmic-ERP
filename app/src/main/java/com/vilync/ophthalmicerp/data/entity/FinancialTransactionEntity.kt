@@ -43,6 +43,9 @@ data class FinancialTransactionEntity(
     // CUSTOMER_RECEIPT, SUPPLIER_PAYMENT, OPENING_BALANCE, PAYMENT_ADJUSTMENT
     val type: String,
 
+    // Business document number (e.g., RCPT/26-27//0001)
+    val documentNumber: String? = null,
+
     // Internal account (Cash/Bank)
     val accountId: Long,
 

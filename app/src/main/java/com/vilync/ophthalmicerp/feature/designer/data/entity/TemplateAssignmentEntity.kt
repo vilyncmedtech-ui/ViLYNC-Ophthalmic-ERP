@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.vilync.ophthalmicerp.feature.designer.domain.model.DesignerDocumentType
+import com.vilync.ophthalmicerp.core.document.domain.DesignerDocumentType
 
 /**
  * Maps which template should be used for a specific Document Type, Company, or Branch.

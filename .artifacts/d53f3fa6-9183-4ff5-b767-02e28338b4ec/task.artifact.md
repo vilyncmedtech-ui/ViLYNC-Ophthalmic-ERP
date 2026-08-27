@@ -1,0 +1,5 @@
+- [x] Implement text wrapping and multi-page support in `exportTrialBalance` (`FinancialStatementPdfExporter.kt`)
+- [x] Add `TOTAL` row at the end of Trial Balance report
+- [x] Adjust column widths to prevent overlap
+- [x] Verify build (`app:assembleDebug`)
+- [ ] Final report and request real-device verification

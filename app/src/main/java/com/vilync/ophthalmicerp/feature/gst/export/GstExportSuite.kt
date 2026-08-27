@@ -179,7 +179,7 @@ object GstExportSuite {
                     row(writer, listOf("HSN Summary"))
                     row(
                         writer,
-                        listOf("HSN", "Description", "Quantity", "Taxable Amount", "GST Amount")
+                        listOf("HSN", "Description", "Quantity", "Taxable Amount", "GST %", "GST Amount", "Total Amount")
                     )
                     snapshot.hsnRows.forEach { item ->
                         row(
@@ -189,7 +189,9 @@ object GstExportSuite {
                                 item.description,
                                 item.quantity.toString(),
                                 decimal(item.taxableAmount),
-                                decimal(item.gstAmount)
+                                decimal(item.gstPercent) + "%",
+                                decimal(item.gstAmount),
+                                decimal(item.totalAmount)
                             )
                         )
                     }

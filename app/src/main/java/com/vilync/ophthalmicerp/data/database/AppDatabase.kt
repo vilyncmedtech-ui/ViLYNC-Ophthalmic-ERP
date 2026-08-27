@@ -24,6 +24,8 @@ import com.vilync.ophthalmicerp.data.dao.StockMovementDao
 import com.vilync.ophthalmicerp.data.dao.UserDao
 import com.vilync.ophthalmicerp.feature.backup.data.BackupMetadataDao
 import com.vilync.ophthalmicerp.feature.backup.data.BackupMetadataEntity
+import com.vilync.ophthalmicerp.data.dao.InventoryThresholdDao
+import com.vilync.ophthalmicerp.data.entity.InventoryThresholdEntity
 import com.vilync.ophthalmicerp.data.dao.DocumentNumberingDao
 import com.vilync.ophthalmicerp.data.entity.DocumentNumberingEntity
 import com.vilync.ophthalmicerp.data.entity.AuditTrailEntity
@@ -101,9 +103,10 @@ import com.vilync.ophthalmicerp.feature.designer.data.entity.TemplateVersionEnti
         DocumentTemplateEntity::class,
         TemplateVersionEntity::class,
         TemplateAssignmentEntity::class,
-        TemplateAssetEntity::class
+        TemplateAssetEntity::class,
+        InventoryThresholdEntity::class
     ],
-    version = 26,
+    version = 34,
     exportSchema = false
 )
 @TypeConverters(DesignerTypeConverters::class)
@@ -172,6 +175,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun documentNumberingDao(): DocumentNumberingDao
 
     abstract fun backupMetadataDao(): BackupMetadataDao
+
+    abstract fun inventoryThresholdDao(): InventoryThresholdDao
 
 
     // =========================================================
@@ -2378,6 +2383,157 @@ abstract class AppDatabase : RoomDatabase() {
                         )
                     """.trimIndent())
                     database.execSQL("CREATE INDEX IF NOT EXISTS index_template_assets_assetName ON template_assets(assetName)")
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 26 -> 27
+        // =====================================================
+        //
+        // Configurable Product/Power-wise Low Stock Alert Thresholds.
+        // =====================================================
+
+        val MIGRATION_26_27 =
+            object : Migration(26, 27) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS inventory_thresholds (
+                            productId INTEGER NOT NULL,
+                            power TEXT NOT NULL,
+                            minimumStock INTEGER NOT NULL,
+                            reorderLevel INTEGER NOT NULL,
+                            PRIMARY KEY(productId, power),
+                            FOREIGN KEY(productId) REFERENCES products(id) ON UPDATE NO ACTION ON DELETE CASCADE
+                        )
+                        """.trimIndent()
+                    )
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_inventory_thresholds_productId ON inventory_thresholds(productId)")
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 27 -> 28
+        // =====================================================
+        //
+        // Adds status field to purchases for Purchase Order support.
+        // =====================================================
+
+        val MIGRATION_27_28 =
+            object : Migration(27, 28) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("ALTER TABLE purchases ADD COLUMN status TEXT NOT NULL DEFAULT 'POSTED'")
+                    database.execSQL("CREATE INDEX IF NOT EXISTS index_purchases_status ON purchases(status)")
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 28 -> 29
+        // =====================================================
+        //
+        // Adds gstPercent to Opening Stock items.
+        // =====================================================
+
+        val MIGRATION_28_29 =
+            object : Migration(28, 29) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("ALTER TABLE opening_stock_items ADD COLUMN gstPercent REAL NOT NULL DEFAULT 0.0")
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 29 -> 30
+        // =====================================================
+        //
+        // Adds serialNumber and rawSerial to Opening Stock items.
+        // Backfills legacy SERIAL rows from batchNumber.
+        // =====================================================
+
+        val MIGRATION_29_30 =
+            object : Migration(29, 30) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL("ALTER TABLE opening_stock_items ADD COLUMN serialNumber TEXT NOT NULL DEFAULT ''")
+                    database.execSQL("ALTER TABLE opening_stock_items ADD COLUMN rawSerial TEXT NOT NULL DEFAULT ''")
+                    
+                    // Backfill: if product is SERIAL, copy batchNumber to serial fields.
+                    database.execSQL("""
+                        UPDATE opening_stock_items 
+                        SET serialNumber = batchNumber, rawSerial = batchNumber 
+                        WHERE productId IN (SELECT id FROM products WHERE trackingType = 'SERIAL')
+                    """.trimIndent())
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 30 -> 31
+        // =====================================================
+        //
+        // Adds sourceChallanItemId to sale_lenses to support
+        // atomic Challan settlement during Invoice posting.
+        // =====================================================
+
+        val MIGRATION_30_31 =
+            object : Migration(30, 31) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE sale_lenses ADD COLUMN sourceChallanItemId INTEGER DEFAULT NULL"
+                    )
+                }
+            }
+
+
+        // =====================================================
+        // MIGRATION 31 -> 32
+        // =====================================================
+        //
+        // Adds asLibrary flag to challans to support Rule 1
+        // of Lens Library Status.
+        // =====================================================
+
+        val MIGRATION_31_32 =
+            object : Migration(31, 32) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE challans ADD COLUMN asLibrary INTEGER NOT NULL DEFAULT 0"
+                    )
+                }
+            }
+
+        // =====================================================
+        // MIGRATION 32 -> 33
+        // =====================================================
+        //
+        // Adds sourceSampleIssueItemId to sale_lenses to support
+        // atomic Sample settlement during Invoice posting.
+        // =====================================================
+
+        val MIGRATION_32_33 =
+            object : Migration(32, 33) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE sale_lenses ADD COLUMN sourceSampleIssueItemId INTEGER DEFAULT NULL"
+                    )
+                }
+            }
+
+        // =====================================================
+        // MIGRATION 33 -> 34
+        // =====================================================
+        //
+        // Adds documentNumber to financial_transactions.
+        // =====================================================
+
+        val MIGRATION_33_34 =
+            object : Migration(33, 34) {
+                override fun migrate(database: SupportSQLiteDatabase) {
+                    database.execSQL(
+                        "ALTER TABLE financial_transactions ADD COLUMN documentNumber TEXT DEFAULT NULL"
+                    )
                 }
             }
 

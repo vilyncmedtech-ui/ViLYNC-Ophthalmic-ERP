@@ -1,6 +1,6 @@
 package com.vilync.ophthalmicerp.core.document.template
 
-import com.vilync.ophthalmicerp.feature.designer.domain.model.JSON.TemplateLayout
+import com.vilync.ophthalmicerp.core.document.domain.TemplateLayout
 
 /**
  * Origin of the template data.

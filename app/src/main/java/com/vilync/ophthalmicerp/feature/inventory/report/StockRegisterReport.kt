@@ -4,14 +4,6 @@ import com.vilync.ophthalmicerp.feature.inventory.model.StockRegisterRow
 
 /**
  * Common report model for Stock Register exports.
- *
- * This model is intentionally independent from:
- * - Excel
- * - PDF
- * - Android Print
- *
- * All export formats will consume the same report data,
- * ensuring that quantities remain consistent across formats.
  */
 data class StockRegisterReport(
 
@@ -26,6 +18,8 @@ data class StockRegisterReport(
     val totalPurchased: Int,
 
     val totalReturned: Int,
+
+    val totalSold: Int,
 
     val totalAvailable: Int
 )
@@ -48,6 +42,8 @@ data class StockRegisterReportRow(
 
     val returnedQuantity: Int,
 
+    val soldQuantity: Int,
+
     val availableQuantity: Int
 )
 
@@ -55,12 +51,6 @@ data class StockRegisterReportRow(
 /**
  * Creates a report snapshot from the currently visible
  * Stock Register rows.
- *
- * IMPORTANT:
- *
- * The UI/ViewModel remains the source of the filtered rows.
- * Therefore, if the user searches for a product or power,
- * the generated report can represent exactly those visible rows.
  */
 fun createStockRegisterReport(
     stockRows: List<StockRegisterRow>,
@@ -80,6 +70,8 @@ fun createStockRegisterReport(
                     row.purchasedQuantity,
                 returnedQuantity =
                     row.purchaseReturnQuantity,
+                soldQuantity =
+                    row.soldQuantity,
                 availableQuantity =
                     row.availableQuantity
             )
@@ -104,6 +96,11 @@ fun createStockRegisterReport(
         totalReturned =
             reportRows.sumOf {
                 it.returnedQuantity
+            },
+
+        totalSold = 
+            reportRows.sumOf {
+                it.soldQuantity
             },
 
         totalAvailable =

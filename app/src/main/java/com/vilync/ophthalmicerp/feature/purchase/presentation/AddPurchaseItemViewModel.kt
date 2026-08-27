@@ -1112,4 +1112,27 @@ class AddPurchaseItemViewModel(
         _productSuggestions.value =
             emptyList()
     }
+
+    /**
+     * Constructs a domain model from the current validated UI state.
+     */
+    fun getPurchaseItem(): com.vilync.ophthalmicerp.feature.purchase.model.PurchaseItem {
+        val state = _uiState.value
+        val isIol = state.category.equals("IOL", ignoreCase = true)
+        
+        return com.vilync.ophthalmicerp.feature.purchase.model.PurchaseItem(
+            productId = state.productId,
+            productName = state.productName,
+            model = state.model,
+            category = state.category,
+            hsnCode = state.hsnCode,
+            power = state.power,
+            quantity = if (isIol) state.lensDetails.size else (state.quantity.toIntOrNull() ?: 0),
+            purchaseRate = state.purchaseRate.toDoubleOrNull() ?: 0.0,
+            discountPercent = state.discountPercent.toDoubleOrNull() ?: 0.0,
+            gstPercent = state.gstPercent.toDoubleOrNull() ?: 0.0,
+            batchNumber = state.batchNumber,
+            lensDetails = state.lensDetails
+        )
+    }
 }

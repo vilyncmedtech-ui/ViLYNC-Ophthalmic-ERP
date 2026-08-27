@@ -1,0 +1,3 @@
+- `[x]` Update `onGstReportsClick` in `ReportNavGraph.kt` to navigate to `gst_home`
+- `[x]` Verify build with `app:assembleDebug`
+- `[x]` Create walkthrough artifact

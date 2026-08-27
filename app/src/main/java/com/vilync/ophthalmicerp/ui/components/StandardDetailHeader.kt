@@ -1,17 +1,18 @@
 package com.vilync.ophthalmicerp.ui.components
 
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 
 /**
  * Standard Header for Document Detail Screens.
+ * 
+ * Provides a consistent layout: [Back] [Title] ... [Dashboard] [Export ▼] [Edit]
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -21,10 +22,13 @@ fun StandardDetailHeader(
     onDashboard: () -> Unit,
     onPrint: () -> Unit,
     onPdf: () -> Unit,
-    onShare: () -> Unit,
+    onExcel: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
     onEdit: (() -> Unit)? = null, // Null if not editable
     isEditable: Boolean = true
 ) {
+    var exportExpanded by remember { mutableStateOf(false) }
+
     TopAppBar(
         title = {
             Text(
@@ -39,18 +43,54 @@ fun StandardDetailHeader(
             }
         },
         actions = {
+            // Standard action sequence
             IconButton(onClick = onDashboard) {
                 Icon(Icons.Default.Dashboard, contentDescription = "Dashboard")
             }
-            IconButton(onClick = onPrint) {
-                Icon(Icons.Default.Print, contentDescription = "Print")
+
+            // Consolidated Export Menu
+            Box {
+                TextButton(onClick = { exportExpanded = true }) {
+                    Text(
+                        text = "Export ▼", 
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF071B33)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = exportExpanded,
+                    onDismissRequest = { exportExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Print") },
+                        leadingIcon = { Icon(Icons.Default.Print, null) },
+                        onClick = {
+                            exportExpanded = false
+                            onPrint()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("PDF") },
+                        leadingIcon = { Icon(Icons.Default.PictureAsPdf, null) },
+                        onClick = {
+                            exportExpanded = false
+                            onPdf()
+                        }
+                    )
+                    if (onExcel != null) {
+                        DropdownMenuItem(
+                            text = { Text("Excel") },
+                            leadingIcon = { Icon(Icons.Default.TableChart, null) },
+                            onClick = {
+                                exportExpanded = false
+                                onExcel()
+                            }
+                        )
+                    }
+                }
             }
-            IconButton(onClick = onPdf) {
-                Icon(Icons.Default.PictureAsPdf, contentDescription = "PDF")
-            }
-            IconButton(onClick = onShare) {
-                Icon(Icons.Default.Share, contentDescription = "Share")
-            }
+          // Edit action if supported
             if (onEdit != null && isEditable) {
                 IconButton(onClick = onEdit) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit")

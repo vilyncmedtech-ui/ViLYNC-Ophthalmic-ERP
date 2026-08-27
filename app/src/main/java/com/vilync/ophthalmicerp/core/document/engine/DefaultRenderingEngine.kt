@@ -14,9 +14,13 @@ class DefaultRenderingEngine : RenderingEngine {
 
         layout.pages.forEach { page ->
             page.objects.forEach { obj ->
-                val instruction = mapObjectToInstruction(page.index, obj)
-                if (instruction != null) {
-                    instructions.add(instruction)
+                if (obj is RenderInvoiceTable) {
+                    instructions.addAll(InvoiceTableEngine.decompose(page.index, obj))
+                } else {
+                    val instruction = mapObjectToInstruction(page.index, obj)
+                    if (instruction != null) {
+                        instructions.add(instruction)
+                    }
                 }
             }
         }
@@ -134,6 +138,7 @@ class DefaultRenderingEngine : RenderingEngine {
                 metadata = metadata,
                 properties = obj.properties
             )
+            is RenderInvoiceTable -> null // Handled in process() via decompose
             is RenderDynamicField -> null
         }
     }

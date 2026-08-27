@@ -1,7 +1,6 @@
 package com.vilync.ophthalmicerp.feature.sales.creditnote.presentation
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,23 +26,31 @@ fun CreditNoteDetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
-        uri?.let {
-            uiState.creditNote?.let { cn ->
-                CreditNoteExportSuite.exportPdf(context, it, cn, uiState.items, uiState.lenses)
-            }
-        }
-    }
-
     Scaffold(
         topBar = {
             StandardDetailHeader(
                 title = "Credit Note",
                 onBack = onBack,
                 onDashboard = onDashboard,
-                onPrint = { uiState.creditNote?.let { CreditNoteExportSuite.print(context, it, uiState.items, uiState.lenses) } },
-                onPdf = { uiState.creditNote?.let { pdfLauncher.launch("CreditNote_${it.creditNoteNumber.replace("/", "_")}.pdf") } },
-                onShare = { uiState.creditNote?.let { CreditNoteExportSuite.sharePdf(context, it, uiState.items, uiState.lenses) } },
+                onPrint = { uiState.creditNote?.let { cn ->
+                    // Re-collecting items and lenses for export suite to maintain compatibility
+                    val items = uiState.lines.map { it.item }
+                    val lenses = uiState.lines.flatMap { it.lenses }
+                    CreditNoteExportSuite.print(context, cn, items, lenses, uiState.companyProfile)
+                } },
+                onPdf = { uiState.creditNote?.let { cn ->
+                    val items = uiState.lines.map { it.item }
+                    val lenses = uiState.lines.flatMap { it.lenses }
+                    CreditNoteExportSuite.sharePdf(context, cn, items, lenses, uiState.companyProfile)
+                } },
+                onExcel = {
+                    uiState.creditNote?.let { cn ->
+                        val items = uiState.lines.map { it.item }
+                        val lenses = uiState.lines.flatMap { it.lenses }
+                        CreditNoteExportSuite.exportExcelAndShare(context, cn, items, lenses)
+                    }
+                },
+                onShare = null,
                 onEdit = { uiState.creditNote?.let { onEdit(it.id) } },
                 isEditable = uiState.creditNote?.status != "CANCELLED"
             )
@@ -78,14 +86,43 @@ fun CreditNoteDetailScreen(
                 item {
                     Text("ITEMS", fontWeight = FontWeight.Bold)
                 }
-                items(uiState.items) { item ->
+                items(uiState.lines) { line ->
+                    val item = line.item
                     Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp)) {
-                            Text(item.productName, fontWeight = FontWeight.Bold)
-                            Text("Qty: ${item.quantity} • Rate: ₹${item.rate} • Total: ₹${item.totalAmount}")
-                            val itemLenses = uiState.lenses.filter { it.creditNoteItemId == item.id }
-                            if (itemLenses.isNotEmpty()) {
-                                Text("Serials: ${itemLenses.joinToString(", ") { it.serialNumber }}", style = MaterialTheme.typography.bodySmall)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(item.productName, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                if (line.hsn.isNotBlank()) {
+                                    Text("HSN: ${line.hsn}", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            Text("Power: ${item.power} • Qty: ${item.quantity}")
+                            Text("Rate: ₹${item.rate} • Total: ₹${item.totalAmount}")
+                            
+                            if (line.lenses.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text("Serials", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    line.lenses.forEach { lens ->
+                                        SuggestionChip(
+                                            onClick = { },
+                                            label = { 
+                                                Text(
+                                                    "${formatSerial(lens.serialNumber)} ${formatExp(lens.expiryDate)}",
+                                                    fontSize = 11.sp
+                                                ) 
+                                            },
+                                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                                containerColor = Color(0xFFF4F9FF)
+                                            ),
+                                            border = BorderStroke(1.dp, Color(0xFFDDEAF5))
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -111,4 +148,14 @@ fun CreditNoteDetailScreen(
             }
         }
     }
+}
+
+private fun formatSerial(sn: String): String {
+    val t = sn.trim()
+    return if (t.isEmpty() || t.startsWith("LMDE", ignoreCase = true)) t else "LMDE$t"
+}
+
+private fun formatExp(v: String): String {
+    val t = v.trim()
+    return if (t.length == 4 && t.all { it.isDigit() }) "${t.substring(0, 2)}/${t.substring(2, 4)}" else t
 }

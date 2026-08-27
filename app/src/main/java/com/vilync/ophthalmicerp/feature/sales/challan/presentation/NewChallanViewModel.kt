@@ -6,6 +6,8 @@ import com.vilync.ophthalmicerp.data.entity.ChallanEntity
 import com.vilync.ophthalmicerp.data.entity.ChallanItemEntity
 import com.vilync.ophthalmicerp.data.entity.InventoryUnitEntity
 import com.vilync.ophthalmicerp.data.repository.ChallanRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentNumberingRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentType
 import com.vilync.ophthalmicerp.data.repository.InventoryRepository
 import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
 import com.vilync.ophthalmicerp.feature.master.party.model.PartyMaster
@@ -14,6 +16,8 @@ import com.vilync.ophthalmicerp.feature.master.product.data.ProductMasterReposit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -24,7 +28,9 @@ class NewChallanViewModel(
     private val challanRepository: ChallanRepository,
     private val inventoryRepository: InventoryRepository,
     private val partyRepository: PartyRepository,
-    private val productRepository: ProductMasterRepository
+    private val productRepository: ProductMasterRepository,
+    private val numberingRepository: DocumentNumberingRepository,
+    private val editChallanId: Long? = null
 ) : ViewModel() {
 
     private val _uiState =
@@ -40,6 +46,72 @@ class NewChallanViewModel(
 
     init {
         loadCustomers()
+        
+        if (editChallanId != null && editChallanId > 0L) {
+            loadChallanForEdit(editChallanId)
+        } else {
+            refreshChallanNumberPreview(_uiState.value.financialYearStart)
+        }
+    }
+
+    private fun loadChallanForEdit(id: Long) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            try {
+                val challan = challanRepository.getChallanById(id)
+                    ?: error("Challan not found.")
+                
+                val items = challanRepository.getItemsByChallanId(id)
+                
+                val allParties = _uiState.value.customers.ifEmpty {
+                    partyRepository.getAllActiveParties().firstOrNull() ?: emptyList()
+                }
+                
+                val customer = allParties.firstOrNull { it.id == challan.customerId }
+
+                _uiState.update { state ->
+                    state.copy(
+                        isLoading = false,
+                        isEditMode = true,
+                        editingChallanId = id,
+                        selectedCustomer = customer,
+                        challanNumber = challan.challanNumber,
+                        challanDate = challan.challanDate,
+                        financialYearStart = challan.financialYearStart,
+                        asLibrary = challan.asLibrary,
+                        remarks = challan.remarks,
+                        items = items.map { item ->
+                            NewChallanItemUi(
+                                inventoryUnitId = item.inventoryUnitId,
+                                productId = item.productId,
+                                productName = item.productName,
+                                serialNumber = item.serialNumber,
+                                power = item.power,
+                                batchNumber = item.batchNumber,
+                                expiryDate = item.expiryDate,
+                                rate = item.rate,
+                                gstPercent = item.gstPercent
+                            )
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = e.message ?: "Failed to load Challan.") }
+            }
+        }
+    }
+
+    private fun refreshChallanNumberPreview(fyStart: Int) {
+        viewModelScope.launch {
+            try {
+                val preview = numberingRepository.peekNextDocumentNumber(DocumentType.CHALLAN, fyStart)
+                _uiState.value = _uiState.value.copy(
+                    challanNumber = preview
+                )
+            } catch (e: Exception) {
+                // Silently fail preview
+            }
+        }
     }
 
     private fun loadCustomers() {
@@ -90,14 +162,15 @@ class NewChallanViewModel(
     fun updateChallanDate(
         value: String
     ) {
+        val fyStart = financialYearStartFromDisplayDate(value)
         _uiState.value =
             _uiState.value.copy(
                 challanDate = value,
-                financialYearStart =
-                    financialYearStartFromDisplayDate(value),
+                financialYearStart = fyStart,
                 errorMessage = null,
                 successMessage = null
             )
+        refreshChallanNumberPreview(fyStart)
     }
 
     fun updateRemarks(
@@ -106,6 +179,21 @@ class NewChallanViewModel(
         _uiState.value =
             _uiState.value.copy(
                 remarks = value,
+                errorMessage = null
+            )
+    }
+
+
+    // =========================================================
+    // LENS LIBRARY
+    // =========================================================
+
+    fun updateAsLibrary(
+        value: Boolean
+    ) {
+        _uiState.value =
+            _uiState.value.copy(
+                asLibrary = value,
                 errorMessage = null
             )
     }
@@ -359,17 +447,19 @@ class NewChallanViewModel(
                         challanNumber
                     )
 
-                val duplicate =
-                    challanRepository
-                        .challanNumberExists(
-                            normalizedChallanNumber =
-                                normalizedNumber,
-                            financialYearStart =
-                                state.financialYearStart
-                        )
+                if (!state.isEditMode) {
+                    val duplicate =
+                        challanRepository
+                            .challanNumberExists(
+                                normalizedChallanNumber =
+                                    normalizedNumber,
+                                financialYearStart =
+                                    state.financialYearStart
+                            )
 
-                require(!duplicate) {
-                    "Challan Number $challanNumber already exists in this Financial Year."
+                    require(!duplicate) {
+                        "Challan Number $challanNumber already exists in this Financial Year."
+                    }
                 }
 
                 val now =
@@ -377,12 +467,14 @@ class NewChallanViewModel(
 
                 val challan =
                     ChallanEntity(
+                        id = if (state.isEditMode) state.editingChallanId ?: 0L else 0L,
                         customerId = customer.id,
                         customerName = customer.partyName.trim(),
                         challanNumber = challanNumber,
                         normalizedChallanNumber = normalizedNumber,
                         challanDate = state.challanDate.trim(),
                         financialYearStart = state.financialYearStart,
+                        asLibrary = state.asLibrary,
                         remarks = state.remarks.trim(),
                         status = "OPEN",
                         createdAt = now,
@@ -392,7 +484,7 @@ class NewChallanViewModel(
                 val items =
                     state.items.map { item ->
                         ChallanItemEntity(
-                            challanId = 0L,
+                            challanId = if (state.isEditMode) state.editingChallanId ?: 0L else 0L,
                             inventoryUnitId =
                                 item.inventoryUnitId,
                             productId =
@@ -425,11 +517,18 @@ class NewChallanViewModel(
                     }
 
                 val challanId =
-                    challanRepository
-                        .saveCompleteNewChallan(
+                    if (state.isEditMode && state.editingChallanId != null) {
+                        challanRepository.updateCompleteChallan(
+                            challanId = state.editingChallanId,
                             challan = challan,
                             items = items
                         )
+                    } else {
+                        challanRepository.saveCompleteNewChallan(
+                            challan = challan,
+                            items = items
+                        )
+                    }
 
                 _uiState.value =
                     NewChallanUiState(
@@ -442,7 +541,8 @@ class NewChallanViewModel(
                         savedChallanId =
                             challanId,
                         successMessage =
-                            "Challan $challanNumber saved successfully."
+                            if (state.isEditMode) "Challan $challanNumber updated successfully."
+                            else "Challan $challanNumber saved successfully."
                     )
 
             } catch (exception: Exception) {

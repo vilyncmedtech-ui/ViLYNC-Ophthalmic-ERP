@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vilync.ophthalmicerp.data.dao.FinancialTransactionRow
 import com.vilync.ophthalmicerp.data.entity.FinancialTransactionEntity
 import com.vilync.ophthalmicerp.data.repository.FinancialTransactionRepository
 
@@ -24,19 +25,21 @@ fun PaymentRegisterScreen(
     repository: FinancialTransactionRepository,
     onBack: () -> Unit,
     onViewDetail: (Long) -> Unit,
-    onDuplicate: (Long) -> Unit,
     onEditDraft: (Long) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val transactions by repository.getAllTransactions().collectAsState(initial = emptyList())
+    val transactionRows by repository.getAllTransactionRows().collectAsState(initial = emptyList())
     
-    val filteredTransactions = remember(transactions, type, uiState.registerSearchQuery, uiState.statusFilter) {
+    val filteredTransactions = remember(transactionRows, type, uiState.registerSearchQuery, uiState.statusFilter) {
         val mappedType = if (type == "RECEIPT") "CUSTOMER_RECEIPT" else "SUPPLIER_PAYMENT"
-        transactions.filter { tx ->
+        transactionRows.filter { row ->
+            val tx = row.transaction
             tx.type == mappedType &&
             (uiState.statusFilter == "All" || tx.status == uiState.statusFilter) &&
             (uiState.registerSearchQuery.isBlank() || 
+             (tx.documentNumber?.contains(uiState.registerSearchQuery, ignoreCase = true) == true) ||
              tx.referenceNumber.contains(uiState.registerSearchQuery, ignoreCase = true) ||
+             (row.partyName?.contains(uiState.registerSearchQuery, ignoreCase = true) == true) ||
              tx.remarks.contains(uiState.registerSearchQuery, ignoreCase = true))
         }
     }
@@ -148,17 +151,16 @@ fun PaymentRegisterScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(filteredTransactions) { tx ->
+                items(filteredTransactions) { row ->
                     TransactionCard(
-                        tx = tx, 
-                        onClick = { onViewDetail(tx.id) }, 
+                        row = row, 
+                        onClick = { onViewDetail(row.transaction.id) }, 
                         onLongClick = {
-                            if (tx.status == "POSTED") {
-                                selectedTx = tx
+                            if (row.transaction.status == "POSTED") {
+                                selectedTx = row.transaction
                                 showCancelDialog = true
                             }
                         },
-                        onDuplicate = onDuplicate,
                         onEditDraft = onEditDraft
                     )
                 }
@@ -170,12 +172,12 @@ fun PaymentRegisterScreen(
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun TransactionCard(
-    tx: FinancialTransactionEntity, 
+    row: FinancialTransactionRow, 
     onClick: () -> Unit, 
     onLongClick: () -> Unit,
-    onDuplicate: (Long) -> Unit,
     onEditDraft: (Long) -> Unit
 ) {
+    val tx = row.transaction
     Card(
         modifier = Modifier.fillMaxWidth().combinedClickable(
             onClick = onClick,
@@ -186,26 +188,55 @@ private fun TransactionCard(
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD9DEE8))
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Date: ${tx.transactionDate}", fontSize = 12.sp, color = Color.Gray)
-                Text("Ref: ${tx.referenceNumber.ifBlank { "N/A" }}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                if (tx.status == "CANCELLED") {
-                    Text("CANCELLED", color = Color.Red, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 1. Receipt No / Ref
+                RegisterField(
+                    label = if (tx.type == "CUSTOMER_RECEIPT") "Receipt No." else "Ref",
+                    value = if (tx.type == "CUSTOMER_RECEIPT") (tx.documentNumber ?: "Pending") else tx.referenceNumber.ifBlank { "N/A" },
+                    modifier = Modifier.weight(1.3f)
+                )
+
+                // 2. Party Name
+                RegisterField(
+                    label = "Party",
+                    value = row.partyName ?: "Unknown",
+                    modifier = Modifier.weight(2.5f),
+                    valueFontWeight = FontWeight.SemiBold
+                )
+
+                // 3. Payment Date
+                RegisterField(
+                    label = "Date",
+                    value = tx.transactionDate,
+                    modifier = Modifier.weight(1.2f)
+                )
+
+                // 4. Payment Amount
+                Column(
+                    modifier = Modifier.weight(1.5f),
+                    horizontalAlignment = Alignment.Start,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text("Amount", color = Color.Gray, fontSize = 10.sp)
+                    Text(
+                        "₹ %.2f".format(tx.amount),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (tx.status == "CANCELLED") Color.Gray else if (tx.type == "CUSTOMER_RECEIPT") Color(0xFF027A48) else Color(0xFFB42318)
+                    )
+                    if (tx.status == "CANCELLED") {
+                        Text("CANCELLED", color = Color.Red, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
-            
-            Text(
-                "₹ %.2f".format(tx.amount),
-                fontSize = 18.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = if (tx.status == "CANCELLED") Color.Gray else if (tx.type == "CUSTOMER_RECEIPT") Color(0xFF027A48) else Color(0xFFB42318)
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
             
             var menuExpanded by remember { mutableStateOf(false) }
             Box {
@@ -214,15 +245,37 @@ private fun TransactionCard(
                 }
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     DropdownMenuItem(text = { Text("View Details") }, onClick = { onClick(); menuExpanded = false })
-                    if (tx.status == "DRAFT") {
+                    if (tx.status == "DRAFT" || tx.status == "POSTED") {
                         DropdownMenuItem(text = { Text("Edit / Reopen") }, onClick = { onEditDraft(tx.id); menuExpanded = false })
                     }
-                    DropdownMenuItem(text = { Text("Duplicate") }, onClick = { onDuplicate(tx.id); menuExpanded = false })
                     if (tx.status == "POSTED") {
                         DropdownMenuItem(text = { Text("Cancel") }, onClick = { onLongClick(); menuExpanded = false })
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RegisterField(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    valueFontWeight: FontWeight = FontWeight.Bold
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(label, color = Color.Gray, fontSize = 10.sp)
+        Text(
+            value,
+            fontSize = 12.sp,
+            fontWeight = valueFontWeight,
+            color = Color(0xFF14233C),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
     }
 }

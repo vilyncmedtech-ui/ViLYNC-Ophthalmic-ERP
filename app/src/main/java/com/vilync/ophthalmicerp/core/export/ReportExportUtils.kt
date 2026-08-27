@@ -1,6 +1,7 @@
 package com.vilync.ophthalmicerp.core.export
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
@@ -9,6 +10,8 @@ import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import android.print.PrintManager
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
 
@@ -50,6 +53,57 @@ object ReportExportUtils {
             ReportPrintAdapter(report),
             PrintAttributes.Builder().build()
         )
+    }
+
+    fun exportPdfAndShare(context: Context, report: ExportReport) {
+        try {
+            val exportDir = File(context.cacheDir, "exports")
+            if (!exportDir.exists()) exportDir.mkdirs()
+            
+            val file = File(exportDir, safeName(report.title) + ".pdf")
+            exportPdfToFile(context, file, report)
+            shareFile(context, file, "application/pdf", report.title)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun exportExcelAndShare(context: Context, report: ExportReport) {
+        try {
+            val exportDir = File(context.cacheDir, "exports")
+            if (!exportDir.exists()) exportDir.mkdirs()
+
+            val file = File(exportDir, safeName(report.title) + ".csv")
+            exportExcelCsvToFile(file, report)
+            shareFile(context, file, "text/csv", report.title)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Export failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun shareFile(context: Context, file: File, mimeType: String, title: String) {
+        val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share $title").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun safeName(value: String) =
+        value.replace(Regex("[^A-Za-z0-9._-]+"), "_")
+
+    private fun exportExcelCsvToFile(file: File, report: ExportReport) {
+        val csv = buildString {
+            appendCsvRow(report.headers)
+            report.rows.forEach { row ->
+                appendCsvRow(row)
+            }
+        }
+        file.bufferedWriter().use { writer ->
+            writer.write(csv)
+        }
     }
 
     private fun StringBuilder.appendCsvRow(values: List<String>) {

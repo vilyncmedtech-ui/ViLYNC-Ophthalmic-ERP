@@ -15,7 +15,8 @@ class FinancialReportViewModel(
     val schema: ReportSchema,
     private val reportingUseCase: FinancialReportingUseCase,
     private val partyRepository: PartyRepository,
-    private val accountRepository: AccountRepository
+    private val accountRepository: AccountRepository,
+    private val initialPartyId: Long = 0L
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UniversalReportUiState(
@@ -29,7 +30,11 @@ class FinancialReportViewModel(
 
     init {
         loadDynamicOptions()
-        loadData()
+        // If initialPartyId is provided, we don't call loadData() here yet, 
+        // we'll wait for party list to load and then set the filter.
+        if (initialPartyId == 0L) {
+            loadData()
+        }
     }
 
     private fun loadDynamicOptions() {
@@ -37,12 +42,21 @@ class FinancialReportViewModel(
             if (schema.id == "customer_ledger" || schema.id == "supplier_ledger") {
                 partyRepository.getAllActiveParties().collect { parties ->
                     val filtered = if (schema.id == "customer_ledger") {
-                        parties.filter { it.partyType.name == "CUSTOMER" }
+                        parties.filter { it.partyType.name == "CUSTOMER" || it.partyType.name == "BOTH" }
                     } else {
-                        parties.filter { it.partyType.name == "SUPPLIER" }
+                        parties.filter { it.partyType.name == "SUPPLIER" || it.partyType.name == "BOTH" }
                     }
                     partyMap = filtered.associate { it.partyName to it.id }
                     setDynamicOptions("party_id", filtered.map { it.partyName })
+                    
+                    if (initialPartyId > 0L) {
+                        val partyName = filtered.find { it.id == initialPartyId }?.partyName
+                        if (partyName != null) {
+                            updateFilter("party_id", partyName)
+                        } else {
+                            loadData()
+                        }
+                    }
                 }
             } else if (schema.id == "bank_book") {
                 accountRepository.getAccountsByType("BANK").collect { accounts ->
@@ -171,10 +185,11 @@ class FinancialReportViewModelFactory(
     private val schema: ReportSchema,
     private val reportingUseCase: FinancialReportingUseCase,
     private val partyRepository: PartyRepository,
-    private val accountRepository: AccountRepository
+    private val accountRepository: AccountRepository,
+    private val initialPartyId: Long = 0L
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return FinancialReportViewModel(schema, reportingUseCase, partyRepository, accountRepository) as T
+        return FinancialReportViewModel(schema, reportingUseCase, partyRepository, accountRepository, initialPartyId) as T
     }
 }

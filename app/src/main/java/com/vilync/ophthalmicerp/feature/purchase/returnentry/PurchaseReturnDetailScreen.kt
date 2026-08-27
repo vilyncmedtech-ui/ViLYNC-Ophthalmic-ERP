@@ -65,6 +65,11 @@ fun PurchaseReturnDetailScreen(
                 onDashboard = onDashboard,
                 onPrint = { report?.let { ReportExportUtils.print(context, it) } },
                 onPdf = { uiState.purchaseReturn?.let { pdfLauncher.launch("DebitNote_${it.creditNoteNumber.replace("/", "_")}.pdf") } },
+                onExcel = {
+                    uiState.purchaseReturn?.let { pr ->
+                        PurchaseReturnExportSuite.exportExcelAndShare(context, pr, uiState.items, uiState.lensesByItemId)
+                    }
+                },
                 onShare = {
                     uiState.purchaseReturn?.let { cn ->
                         report?.let { r ->

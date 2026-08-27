@@ -2,6 +2,7 @@ package com.vilync.ophthalmicerp.core.util
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import java.io.File
 
@@ -15,6 +16,13 @@ object ShareUtils {
             "${context.packageName}.fileprovider",
             file
         )
+        shareUri(context, uri, mimeType, title)
+    }
+
+    /**
+     * Shares a content Uri using the Android Native Share Sheet.
+     */
+    fun shareUri(context: Context, uri: Uri, mimeType: String, title: String = "Share Document") {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)

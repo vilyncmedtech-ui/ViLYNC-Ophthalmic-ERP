@@ -10,8 +10,16 @@ import kotlinx.coroutines.flow.map
 
 class InventoryStockRepository(
     private val inventoryStockDao: InventoryStockDao,
-    private val productDao: ProductDao
+    private val productDao: ProductDao,
+    private val thresholdDao: com.vilync.ophthalmicerp.data.dao.InventoryThresholdDao
 ) {
+
+    // =========================================================
+    // THRESHOLDS
+    // =========================================================
+
+    suspend fun getAllThresholds(): List<com.vilync.ophthalmicerp.data.entity.InventoryThresholdEntity> =
+        thresholdDao.getAllThresholds()
 
     // =========================================================
     // MASTER DATA
@@ -47,15 +55,7 @@ class InventoryStockRepository(
     // =========================================================
 
     /**
-     * Returns transaction-derived current stock.
-     *
-     * Current calculation:
-     *
-     * Purchase
-     * minus
-     * Active Purchase Return
-     *
-     * Cancelled Purchase Returns do not reduce stock.
+     * Returns reconciled current stock.
      */
     fun getStockRegister():
             Flow<List<StockRegisterRow>> {
@@ -76,6 +76,10 @@ class InventoryStockRepository(
                             row.purchasedQuantity,
                         purchaseReturnQuantity =
                             row.purchaseReturnQuantity,
+                        soldQuantity =
+                            row.soldQuantity,
+                        otherOutQuantity =
+                            row.otherOutQuantity,
                         availableQuantity =
                             row.availableQuantity
                     )

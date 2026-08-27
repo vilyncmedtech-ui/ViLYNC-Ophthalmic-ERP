@@ -2,6 +2,7 @@ package com.vilync.ophthalmicerp.data.repository
 
 import androidx.room.withTransaction
 import com.vilync.ophthalmicerp.data.dao.SalesDao
+import com.vilync.ophthalmicerp.data.dao.SaleWithCreditNoteRow
 import com.vilync.ophthalmicerp.data.database.AppDatabase
 import com.vilync.ophthalmicerp.data.entity.SaleEntity
 import com.vilync.ophthalmicerp.data.entity.SaleItemEntity
@@ -156,6 +157,7 @@ class SalesRepository(
 
         return database.withTransaction {
 
+            val now = System.currentTimeMillis()
             val inventoryDao =
                 database.inventoryDao()
 
@@ -314,14 +316,12 @@ class SalesRepository(
                     // CURRENT STOCK STATUS
                     // =========================================
 
-                    require(
-                        inventoryUnit.status
-                            .trim()
-                            .equals(
-                                other = "IN_STOCK",
-                                ignoreCase = true
-                            )
-                    ) {
+                    val status = inventoryUnit.status.trim().uppercase()
+                    val allowed = status == "IN_STOCK" || 
+                                 (status == "ON_CHALLAN" && saleLens.sourceChallanItemId != null) ||
+                                 (status == "SAMPLE" && saleLens.sourceSampleIssueItemId != null)
+
+                    require(allowed) {
                         "Serial Number ${inventoryUnit.serialNumber} is no longer available in stock. Current status: ${inventoryUnit.status}."
                     }
 
@@ -578,14 +578,12 @@ class SalesRepository(
                     // RECHECK BEFORE MUTATION
                     // =========================================
 
-                    require(
-                        inventoryUnit.status
-                            .trim()
-                            .equals(
-                                other = "IN_STOCK",
-                                ignoreCase = true
-                            )
-                    ) {
+                    val status = inventoryUnit.status.trim().uppercase()
+                    val allowed = status == "IN_STOCK" || 
+                                 (status == "ON_CHALLAN" && saleLens.sourceChallanItemId != null) ||
+                                 (status == "SAMPLE" && saleLens.sourceSampleIssueItemId != null)
+
+                    require(allowed) {
                         "Serial Number ${inventoryUnit.serialNumber} is not available for Sale."
                     }
 
@@ -597,6 +595,71 @@ class SalesRepository(
                         newStatus =
                             "SOLD"
                     )
+
+
+                    // =========================================
+                    // CHALLAN SETTLEMENT (IF SOURCED FROM CHALLAN)
+                    // =========================================
+
+                    if (saleLens.sourceChallanItemId != null) {
+
+                        val settled =
+                            database.challanDao().markItemInvoiced(
+                                challanItemId = saleLens.sourceChallanItemId,
+                                saleId = saleId,
+                                settledAt = now
+                            )
+
+                        if (settled > 0) {
+                            
+                            val ci = database.challanDao().getItemByInventoryUnitId(inventoryUnit.id)
+                            if (ci != null) {
+                                val totalCount = database.challanDao().getTotalItemCount(ci.challanId)
+                                val pendingCount = database.challanDao().getPendingItemCount(ci.challanId)
+                                val newStatus = when {
+                                    totalCount <= 0 -> "OPEN"
+                                    pendingCount <= 0 -> "SETTLED"
+                                    pendingCount < totalCount -> "PARTIALLY_SETTLED"
+                                    else -> "OPEN"
+                                }
+                                database.challanDao().updateChallanStatus(ci.challanId, newStatus, now)
+                            }
+                        }
+                    }
+
+                    // =========================================
+                    // SAMPLE SETTLEMENT (IF SOURCED FROM SAMPLE)
+                    // =========================================
+
+                    if (saleLens.sourceSampleIssueItemId != null) {
+                        
+                        val settled = database.sampleIssueDao().markItemConsumed(
+                            sampleIssueItemId = saleLens.sourceSampleIssueItemId,
+                            consumedAt = now
+                        )
+                        
+                        if (settled > 0) {
+                            // Finding Sample ID from Item ID:
+                            val sampleIdFromItem = database.openHelper.readableDatabase.query("SELECT sampleIssueId FROM sample_issue_items WHERE id = ${saleLens.sourceSampleIssueItemId}").use {
+                                if (it.moveToFirst()) it.getLong(0) else 0L
+                            }
+                            
+                            if (sampleIdFromItem > 0L) {
+                                val total = database.sampleIssueDao().getTotalItemCount(sampleIdFromItem)
+                                val issued = database.sampleIssueDao().getIssuedItemCount(sampleIdFromItem)
+                                val evaluated = database.sampleIssueDao().getEvaluatedItemCount(sampleIdFromItem)
+                                
+                                val newStatus = when {
+                                    total <= 0 -> "ISSUED"
+                                    (issued + evaluated) <= 0 -> "CLOSED"
+                                    issued > 0 -> if (issued < total) "PARTIALLY_RETURNED" else "ISSUED"
+                                    evaluated > 0 -> "EVALUATED"
+                                    else -> "CLOSED"
+                                }
+                                database.sampleIssueDao().updateSampleIssueStatus(sampleIdFromItem, newStatus, now)
+                            }
+                        }
+                    }
 
 
                     // =========================================
@@ -619,7 +682,7 @@ class SalesRepository(
                                 "SOLD",
 
                             fromStatus =
-                                "IN_STOCK",
+                                status,
 
                             toStatus =
                                 "SOLD",
@@ -706,6 +769,7 @@ class SalesRepository(
 
         return database.withTransaction {
 
+            val now = System.currentTimeMillis()
             val inventoryDao = database.inventoryDao()
             val stockMovementDao = database.stockMovementDao()
 
@@ -846,10 +910,14 @@ class SalesRepository(
                             "Existing Serial Number ${unit.serialNumber} is no longer in SOLD status and cannot be edited safely."
                         }
 
-                        in addedIds -> require(
-                            unit.status.trim().equals("IN_STOCK", ignoreCase = true)
-                        ) {
-                            "New Serial Number ${unit.serialNumber} is not available in stock. Current status: ${unit.status}."
+                        in addedIds -> {
+                            val status = unit.status.trim().uppercase()
+                            val allowed = status == "IN_STOCK" || 
+                                         (status == "ON_CHALLAN" && saleLens.sourceChallanItemId != null) ||
+                                         (status == "SAMPLE" && saleLens.sourceSampleIssueItemId != null)
+                            require(allowed) {
+                                "New Serial Number ${unit.serialNumber} is not available in stock. Current status: ${unit.status}."
+                            }
                         }
                     }
                 }
@@ -874,11 +942,70 @@ class SalesRepository(
             // Return removed serials to stock.
             removedIds.forEach { inventoryUnitId ->
                 val unit = requireNotNull(inventoryDao.getById(inventoryUnitId))
+                val oldLens = existingLenses.first { it.inventoryUnitId == inventoryUnitId }
+                
+                val toStatus = when {
+                    oldLens.sourceChallanItemId != null -> "ON_CHALLAN"
+                    oldLens.sourceSampleIssueItemId != null -> "SAMPLE"
+                    else -> "IN_STOCK"
+                }
 
                 inventoryDao.updateStatus(
                     unitId = unit.id,
-                    newStatus = "IN_STOCK"
+                    newStatus = toStatus
                 )
+
+                // If it was from a challan, revert its settlement.
+                if (oldLens.sourceChallanItemId != null) {
+                    database.challanDao().updateChallanItem(
+                        database.challanDao().getItemByInventoryUnitId(unit.id)!!.copy(
+                            settlementStatus = "PENDING",
+                            saleId = null,
+                            settledAt = null,
+                            updatedAt = now
+                        )
+                    )
+                    
+                    val ci = database.challanDao().getItemByInventoryUnitId(unit.id)!!
+                    val totalCount = database.challanDao().getTotalItemCount(ci.challanId)
+                    val pendingCount = database.challanDao().getPendingItemCount(ci.challanId)
+                    val newStatus = when {
+                        totalCount <= 0 -> "OPEN"
+                        pendingCount <= 0 -> "SETTLED"
+                        pendingCount < totalCount -> "PARTIALLY_SETTLED"
+                        else -> "OPEN"
+                    }
+                    database.challanDao().updateChallanStatus(ci.challanId, newStatus, now)
+                }
+                
+                // If it was from a sample issue, revert its settlement.
+                if (oldLens.sourceSampleIssueItemId != null) {
+                    database.sampleIssueDao().updateSampleIssueItemSettlementStatus(
+                        sampleIssueItemId = oldLens.sourceSampleIssueItemId,
+                        status = "EVALUATED", // Revert to EVALUATED
+                        updatedAt = now
+                    )
+                    
+                    // Finding Sample ID from Item ID:
+                    val sampleIdFromItem = database.openHelper.readableDatabase.query("SELECT sampleIssueId FROM sample_issue_items WHERE id = ${oldLens.sourceSampleIssueItemId}").use {
+                        if (it.moveToFirst()) it.getLong(0) else 0L
+                    }
+                    
+                    if (sampleIdFromItem > 0L) {
+                        val total = database.sampleIssueDao().getTotalItemCount(sampleIdFromItem)
+                        val issued = database.sampleIssueDao().getIssuedItemCount(sampleIdFromItem)
+                        val evaluated = database.sampleIssueDao().getEvaluatedItemCount(sampleIdFromItem)
+
+                        val newStatus = when {
+                            total <= 0 -> "ISSUED"
+                            (issued + evaluated) <= 0 -> "CLOSED"
+                            issued > 0 -> if (issued < total) "PARTIALLY_RETURNED" else "ISSUED"
+                            evaluated > 0 -> "EVALUATED"
+                            else -> "CLOSED"
+                        }
+                        database.sampleIssueDao().updateSampleIssueStatus(sampleIdFromItem, newStatus, now)
+                    }
+                }
 
                 stockMovementDao.insertMovement(
                     StockMovementEntity(
@@ -886,7 +1013,7 @@ class SalesRepository(
                         serialNumber = unit.serialNumber.trim(),
                         movementType = "SALE_EDIT_RETURN",
                         fromStatus = "SOLD",
-                        toStatus = "IN_STOCK",
+                        toStatus = toStatus,
                         partyName = sale.customerName.trim(),
                         referenceNumber = sale.invoiceNumber.trim(),
                         movementDate = sale.invoiceDate.trim(),
@@ -898,24 +1025,42 @@ class SalesRepository(
             // Sell newly added serials.
             addedIds.forEach { inventoryUnitId ->
                 val unit = requireNotNull(inventoryDao.getById(inventoryUnitId))
-
-                require(
-                    unit.status.trim().equals("IN_STOCK", ignoreCase = true)
-                ) {
-                    "Serial Number ${unit.serialNumber} is no longer available for this invoice edit."
-                }
+                val saleLens = newLenses.first { it.inventoryUnitId == inventoryUnitId }
+                val fromStatus = unit.status.trim().uppercase()
 
                 inventoryDao.updateStatus(
                     unitId = unit.id,
                     newStatus = "SOLD"
                 )
 
+                // If it's from a challan, settle it.
+                if (saleLens.sourceChallanItemId != null) {
+                    val settled = database.challanDao().markItemInvoiced(
+                        challanItemId = saleLens.sourceChallanItemId,
+                        saleId = saleId,
+                        settledAt = now
+                    )
+                    
+                    if (settled > 0) {
+                        val ci = database.challanDao().getItemByInventoryUnitId(unit.id)!!
+                        val totalCount = database.challanDao().getTotalItemCount(ci.challanId)
+                        val pendingCount = database.challanDao().getPendingItemCount(ci.challanId)
+                        val newStatus = when {
+                            totalCount <= 0 -> "OPEN"
+                            pendingCount <= 0 -> "SETTLED"
+                            pendingCount < totalCount -> "PARTIALLY_SETTLED"
+                            else -> "OPEN"
+                        }
+                        database.challanDao().updateChallanStatus(ci.challanId, newStatus, now)
+                    }
+                }
+
                 stockMovementDao.insertMovement(
                     StockMovementEntity(
                         inventoryUnitId = unit.id,
                         serialNumber = unit.serialNumber.trim(),
                         movementType = "SALE_EDIT_SOLD",
-                        fromStatus = "IN_STOCK",
+                        fromStatus = fromStatus,
                         toStatus = "SOLD",
                         partyName = sale.customerName.trim(),
                         referenceNumber = sale.invoiceNumber.trim(),
@@ -1228,6 +1373,13 @@ class SalesRepository(
                 saleId
         )
 
+    suspend fun getSaleWithCreditNoteById(
+        saleId: Long
+    ): SaleWithCreditNoteRow? =
+        salesDao.getSaleWithCreditNoteById(
+            saleId = saleId
+        )
+
 
     // =========================================================
     // SALE ITEMS
@@ -1298,4 +1450,7 @@ class SalesRepository(
 
     suspend fun getTotalSaleAmountForCustomer(customerId: Long): Double =
         salesDao.getTotalSaleAmountForCustomer(customerId) ?: 0.0
+
+    suspend fun getFilteredSalesForHub(query: String, status: String, startDate: String, endDate: String, customerId: Long? = null): List<SaleEntity> =
+        salesDao.getFilteredSalesForHub(query, status, startDate, endDate, customerId)
 }

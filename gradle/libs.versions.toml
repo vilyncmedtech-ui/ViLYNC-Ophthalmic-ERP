@@ -17,6 +17,7 @@ credentials = "1.6.0"
 googleid = "1.2.0"
 google-api-drive = "v3-rev20260720-2.0.0"
 google-api-client = "2.9.0"
+google-auth = "21.3.0"
 androidx-work = "2.11.2"
 
 [libraries]
@@ -50,6 +51,7 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 androidx-identity-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 androidx-identity-play = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 google-identity-googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
+googleauth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "google-auth" }
 
 google-drive-services = { group = "com.google.apis", name = "google-api-services-drive", version = "v3-rev20240123-2.0.0" }
 google-drive-client = { group = "com.google.api-client", name = "google-api-client-android", version.ref = "google-api-client" }

@@ -1,6 +1,5 @@
 package com.vilync.ophthalmicerp.core.document.template
 
-import com.vilync.ophthalmicerp.feature.designer.data.repository.DocumentTemplateRepository
 import com.vilync.ophthalmicerp.core.document.domain.DocumentTemplate
 
 /**

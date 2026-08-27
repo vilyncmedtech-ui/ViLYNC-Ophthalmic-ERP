@@ -5,10 +5,13 @@ data class OpeningStockUiItem(
     val productName: String = "",
     val model: String = "",
     val power: String = "",
-    val batchNumber: String = "", // Used for Serial No in Serial products
+    val batchNumber: String = "",
+    val serialNumber: String = "",
+    val rawSerial: String = "",
     val expiryDate: String = "",
     val quantity: Int = 1,
     val unitCost: Double = 0.0,
+    val gstPercent: Double = 0.0,
     val totalCost: Double = 0.0,
     val trackingType: String = "QUANTITY"
 )

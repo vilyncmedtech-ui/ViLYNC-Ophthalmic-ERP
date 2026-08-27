@@ -29,13 +29,14 @@ object StockRegisterPdfExporter {
 
     private const val TABLE_START_X = LEFT_MARGIN
 
-    private const val PRODUCT_WIDTH = 190f
-    private const val MODEL_WIDTH = 110f
-    private const val CATEGORY_WIDTH = 90f
-    private const val POWER_WIDTH = 80f
-    private const val PURCHASED_WIDTH = 95f
-    private const val RETURNED_WIDTH = 95f
-    private const val AVAILABLE_WIDTH = 95f
+    private const val PRODUCT_WIDTH = 170f
+    private const val MODEL_WIDTH = 100f
+    private const val CATEGORY_WIDTH = 80f
+    private const val POWER_WIDTH = 60f
+    private const val PURCHASED_WIDTH = 80f
+    private const val SOLD_WIDTH = 80f
+    private const val RETURNED_WIDTH = 80f
+    private const val AVAILABLE_WIDTH = 80f
 
 
     // =========================================================
@@ -560,13 +561,27 @@ object StockRegisterPdfExporter {
 
         drawCellText(
             canvas,
-            "Returned",
+            "Sold",
             TABLE_START_X +
                     PRODUCT_WIDTH +
                     MODEL_WIDTH +
                     CATEGORY_WIDTH +
                     POWER_WIDTH +
                     PURCHASED_WIDTH,
+            textY,
+            textPaint
+        )
+
+        drawCellText(
+            canvas,
+            "Returned",
+            TABLE_START_X +
+                    PRODUCT_WIDTH +
+                    MODEL_WIDTH +
+                    CATEGORY_WIDTH +
+                    POWER_WIDTH +
+                    PURCHASED_WIDTH +
+                    SOLD_WIDTH,
             textY,
             textPaint
         )
@@ -580,6 +595,7 @@ object StockRegisterPdfExporter {
                     CATEGORY_WIDTH +
                     POWER_WIDTH +
                     PURCHASED_WIDTH +
+                    SOLD_WIDTH +
                     RETURNED_WIDTH,
             textY,
             textPaint
@@ -696,13 +712,28 @@ object StockRegisterPdfExporter {
 
         drawCellText(
             canvas,
-            row.returnedQuantity.toString(),
+            row.soldQuantity.toString(),
             TABLE_START_X +
                     PRODUCT_WIDTH +
                     MODEL_WIDTH +
                     CATEGORY_WIDTH +
                     POWER_WIDTH +
                     PURCHASED_WIDTH,
+            textY,
+            textPaint,
+            SOLD_WIDTH
+        )
+
+        drawCellText(
+            canvas,
+            row.returnedQuantity.toString(),
+            TABLE_START_X +
+                    PRODUCT_WIDTH +
+                    MODEL_WIDTH +
+                    CATEGORY_WIDTH +
+                    POWER_WIDTH +
+                    PURCHASED_WIDTH +
+                    SOLD_WIDTH,
             textY,
             textPaint,
             RETURNED_WIDTH
@@ -717,6 +748,7 @@ object StockRegisterPdfExporter {
                     CATEGORY_WIDTH +
                     POWER_WIDTH +
                     PURCHASED_WIDTH +
+                    SOLD_WIDTH +
                     RETURNED_WIDTH,
             textY,
             textPaint,
@@ -740,7 +772,7 @@ object StockRegisterPdfExporter {
                 Paint.ANTI_ALIAS_FLAG
             ).apply {
 
-                textSize = 11f
+                textSize = 10f
 
                 typeface =
                     Typeface.create(
@@ -751,11 +783,10 @@ object StockRegisterPdfExporter {
 
 
         val summary =
-            "Total Purchased: ${report.totalPurchased}" +
-                    "    |    " +
-                    "Total Returned: ${report.totalReturned}" +
-                    "    |    " +
-                    "Current Stock: ${report.totalAvailable}"
+            "Purc: ${report.totalPurchased}" +
+                    " | Sold: ${report.totalSold}" +
+                    " | Ret: ${report.totalReturned}" +
+                    " | Net Stock: ${report.totalAvailable}"
 
 
         canvas.drawText(
@@ -851,6 +882,15 @@ object StockRegisterPdfExporter {
                         CATEGORY_WIDTH +
                         POWER_WIDTH +
                         PURCHASED_WIDTH +
+                        SOLD_WIDTH,
+
+                TABLE_START_X +
+                        PRODUCT_WIDTH +
+                        MODEL_WIDTH +
+                        CATEGORY_WIDTH +
+                        POWER_WIDTH +
+                        PURCHASED_WIDTH +
+                        SOLD_WIDTH +
                         RETURNED_WIDTH,
 
                 PAGE_WIDTH -

@@ -9,19 +9,46 @@ class LowStockAlertUseCase(
 ) {
     companion object {
         const val STATUS_OUT_OF_STOCK = "OUT_OF_STOCK"
-        const val STATUS_CRITICAL = "CRITICAL"
-        const val STATUS_LOW = "LOW"
+        const val STATUS_LOW_STOCK = "LOW_STOCK"
+        const val STATUS_REORDER = "REORDER"
         const val STATUS_HEALTHY = "HEALTHY"
     }
 
+    /**
+     * Returns raw variant-wise snapshots for dedicated status screens.
+     */
+    suspend fun getSnapshots(): List<InventorySnapshot> {
+        return stockEngine.execute()
+    }
+
+    /**
+     * The canonical classification logic for the entire ERP.
+     */
+    fun classify(snapshot: InventorySnapshot): String {
+        val qty = snapshot.availableQuantity
+        val min = snapshot.minimumStock
+        val reorder = snapshot.reorderLevel
+        
+        return when {
+            qty <= 0 -> STATUS_OUT_OF_STOCK
+            qty < min -> STATUS_LOW_STOCK
+            qty < reorder -> STATUS_REORDER
+            else -> STATUS_HEALTHY
+        }
+    }
+
+    /**
+     * Compatibility layer for the Universal Report Engine.
+     */
     suspend fun getAlerts(filters: Map<String, Any?>): List<ReportRowData> {
-        val snapshots = stockEngine.execute()
+        val snapshots = getSnapshots()
         
         return snapshots.map { snapshot ->
             val status = classify(snapshot)
             
             ReportRowData(
-                id = snapshot.productId,
+                // Use hash code for generic report ID, but dedicated screens should use (productId, power)
+                id = (snapshot.productId.toString() + snapshot.power).hashCode().toLong(),
                 values = mapOf(
                     "product" to snapshot.productName,
                     "company" to snapshot.brandName,
@@ -47,32 +74,19 @@ class LowStockAlertUseCase(
         }.sortedWith(compareBy<ReportRowData> { 
             when(it.values["status"]) {
                 STATUS_OUT_OF_STOCK -> 0
-                STATUS_CRITICAL -> 1
-                STATUS_LOW -> 2
+                STATUS_LOW_STOCK -> 1
+                STATUS_REORDER -> 2
                 else -> 3
             }
         }.thenBy { it.values["product"]?.toString() ?: "" })
-    }
-
-    private fun classify(snapshot: InventorySnapshot): String {
-        val qty = snapshot.availableQuantity
-        val min = snapshot.minimumStock
-        val reorder = snapshot.reorderLevel
-        
-        return when {
-            qty == 0 -> STATUS_OUT_OF_STOCK
-            qty <= min -> STATUS_CRITICAL
-            qty <= reorder -> STATUS_LOW
-            else -> STATUS_HEALTHY
-        }
     }
 
     fun calculateSummary(rows: List<ReportRowData>): Map<String, String> {
         return mapOf(
             "total" to rows.size.toString(),
             "outOfStock" to rows.count { it.values["status"] == STATUS_OUT_OF_STOCK }.toString(),
-            "critical" to rows.count { it.values["status"] == STATUS_CRITICAL }.toString(),
-            "low" to rows.count { it.values["status"] == STATUS_LOW }.toString()
+            "lowStock" to rows.count { it.values["status"] == STATUS_LOW_STOCK }.toString(),
+            "reorder" to rows.count { it.values["status"] == STATUS_REORDER }.toString()
         )
     }
 }

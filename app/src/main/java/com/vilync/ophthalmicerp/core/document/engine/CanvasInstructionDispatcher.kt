@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import com.vilync.ophthalmicerp.core.document.domain.geometry.MeasurementUnit
 import com.vilync.ophthalmicerp.core.document.domain.style.DocumentColor
@@ -48,7 +50,9 @@ object CanvasInstructionDispatcher {
     private fun handleText(canvas: Canvas, inst: DrawTextInstruction) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = inst.style.textColor.toAndroidColor()
-            textSize = (inst.style.fontSize * (inst.dimensions.unit.mmFactor / MeasurementUnit.POINT.mmFactor)).toFloat()
+            // SPRINT 27 CORRECTION: Font size is already provided in Points (1/72").
+            // We use the raw value directly for the point-based PDF/Print canvas.
+            textSize = inst.style.fontSize.toFloat()
             typeface = when (inst.style.fontStyle) {
                 FontStyle.BOLD -> Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 FontStyle.ITALIC -> Typeface.create(Typeface.DEFAULT, Typeface.ITALIC)
@@ -77,12 +81,13 @@ object CanvasInstructionDispatcher {
             paint.textAlign = Paint.Align.RIGHT
         }
 
+        // Draw text with baseline adjustment to fit within intended bounding box
         canvas.drawText(inst.text, xAdjusted, y + paint.textSize, paint)
         canvas.restore()
     }
 
     private fun handleRectangle(canvas: Canvas, inst: DrawRectangleInstruction) {
-        val paint = Paint().apply {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = inst.style.backgroundColor.toAndroidColor()
             style = Paint.Style.FILL
         }
@@ -95,7 +100,7 @@ object CanvasInstructionDispatcher {
         canvas.drawRect(left, top, right, bottom, paint)
 
         inst.style.border?.let { border ->
-            val strokePaint = Paint().apply {
+            val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = border.color.toAndroidColor()
                 strokeWidth = (border.width * mmToPoint).toFloat()
                 style = Paint.Style.STROKE
@@ -105,7 +110,7 @@ object CanvasInstructionDispatcher {
     }
 
     private fun handleLine(canvas: Canvas, inst: DrawLineInstruction) {
-        val paint = Paint().apply {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = inst.style.textColor.toAndroidColor()
             strokeWidth = (inst.style.border?.width?.let { it * mmToPoint } ?: 1.0).toFloat()
         }
@@ -118,7 +123,7 @@ object CanvasInstructionDispatcher {
     }
 
     private fun handleCircle(canvas: Canvas, inst: DrawCircleInstruction) {
-        val paint = Paint().apply {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = inst.style.backgroundColor.toAndroidColor()
             style = Paint.Style.FILL
         }
@@ -129,7 +134,7 @@ object CanvasInstructionDispatcher {
         canvas.drawCircle(cx, cy, radius, paint)
 
         inst.style.border?.let { border ->
-            val strokePaint = Paint().apply {
+            val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = border.color.toAndroidColor()
                 strokeWidth = (border.width * mmToPoint).toFloat()
                 style = Paint.Style.STROKE
@@ -146,7 +151,7 @@ object CanvasInstructionDispatcher {
         val right = left + (inst.dimensions.width * mmToPoint).toFloat()
         val bottom = top + (inst.dimensions.height * mmToPoint).toFloat()
 
-        canvas.drawBitmap(bitmap, null, android.graphics.RectF(left, top, right, bottom), null)
+        canvas.drawBitmap(bitmap, null, RectF(left, top, right, bottom), null)
     }
 
     private fun drawEncodedSymbol(canvas: Canvas, inst: RenderInstruction, symbol: EncodedSymbol, quietZoneModules: Int) {

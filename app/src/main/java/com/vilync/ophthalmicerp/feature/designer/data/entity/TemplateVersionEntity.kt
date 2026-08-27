@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.vilync.ophthalmicerp.feature.designer.domain.model.TemplateStatus
+import com.vilync.ophthalmicerp.core.document.domain.TemplateStatus
 
 /**
  * Stores historical and current JSON layouts for a template.

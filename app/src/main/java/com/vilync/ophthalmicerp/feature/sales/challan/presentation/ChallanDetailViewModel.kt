@@ -6,17 +6,27 @@ import androidx.lifecycle.viewModelScope
 import com.vilync.ophthalmicerp.data.entity.ChallanEntity
 import com.vilync.ophthalmicerp.data.entity.ChallanItemEntity
 import com.vilync.ophthalmicerp.data.repository.ChallanRepository
+import com.vilync.ophthalmicerp.data.repository.ProductRepository
 import com.vilync.ophthalmicerp.feature.companyprofile.data.CompanyProfileDao
 import com.vilync.ophthalmicerp.feature.companyprofile.data.CompanyProfileEntity
+import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
+import com.vilync.ophthalmicerp.feature.master.party.model.PartyMaster
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+data class ChallanGroupedRow(
+    val item: ChallanItemEntity,
+    val items: List<ChallanItemEntity>, // All items in this group
+    val hsn: String = ""
+)
+
 data class ChallanDetailUiState(
     val isLoading: Boolean = true,
     val challan: ChallanEntity? = null,
-    val items: List<ChallanItemEntity> = emptyList(),
+    val lines: List<ChallanGroupedRow> = emptyList(),
+    val customer: PartyMaster? = null,
     val companyProfile: CompanyProfileEntity? = null,
     val errorMessage: String? = null
 )
@@ -24,6 +34,8 @@ data class ChallanDetailUiState(
 class ChallanDetailViewModel(
     private val challanId: Long,
     private val repository: ChallanRepository,
+    private val productRepository: ProductRepository,
+    private val partyRepository: PartyRepository,
     private val companyProfileDao: CompanyProfileDao
 ) : ViewModel() {
 
@@ -41,11 +53,37 @@ class ChallanDetailViewModel(
             _uiState.value = ChallanDetailUiState(isLoading = true)
             runCatching {
                 val challan = requireNotNull(repository.getChallanById(challanId)) { "Challan not found" }
-                val items = repository.getItemsByChallanId(challanId)
+                val rawItems = repository.getItemsByChallanId(challanId)
                 val company = companyProfileDao.getCompanyProfile()
-                Triple(challan, items, company)
-            }.onSuccess { (challan, items, company) ->
-                _uiState.value = ChallanDetailUiState(isLoading = false, challan = challan, items = items, companyProfile = company)
+                val customer = partyRepository.getPartyById(challan.customerId)
+
+                // =====================================================
+                // GROUPING BY 6-FIELD KEY (CONSISTENT WITH TAX INVOICE)
+                // =====================================================
+                val groupedLines = rawItems.groupBy { item ->
+                    val product = productRepository.getProductById(item.productId)
+                    val hsn = product?.hsnCode ?: ""
+                    // Discount% is 0.0 for Challan
+                    "${item.productName}|${item.power}|${item.rate}|0.0|${item.gstPercent}|$hsn"
+                }.values.map { group ->
+                    val first = group.first()
+                    val product = productRepository.getProductById(first.productId)
+                    ChallanGroupedRow(
+                        item = first, // Snapshot of first item as base
+                        items = group,
+                        hsn = product?.hsnCode ?: ""
+                    )
+                }
+
+                Triple(challan, groupedLines, company to customer)
+            }.onSuccess { (challan, lines, pair) ->
+                _uiState.value = ChallanDetailUiState(
+                    isLoading = false, 
+                    challan = challan, 
+                    lines = lines, 
+                    companyProfile = pair.first,
+                    customer = pair.second
+                )
             }.onFailure {
                 _uiState.value = ChallanDetailUiState(isLoading = false, errorMessage = it.message)
             }
@@ -56,9 +94,11 @@ class ChallanDetailViewModel(
 class ChallanDetailViewModelFactory(
     private val challanId: Long,
     private val repository: ChallanRepository,
+    private val productRepository: ProductRepository,
+    private val partyRepository: PartyRepository,
     private val companyProfileDao: CompanyProfileDao
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return ChallanDetailViewModel(challanId, repository, companyProfileDao) as T
+        return ChallanDetailViewModel(challanId, repository, productRepository, partyRepository, companyProfileDao) as T
     }
 }

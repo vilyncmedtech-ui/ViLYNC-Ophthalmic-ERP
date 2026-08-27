@@ -34,7 +34,10 @@ class GetAvailableStockUseCase(
         val sales = repository.getSaleQuantityStock().associateBy { Pair(it.productId, it.power) }
         val salesReturns = repository.getSalesReturnQuantityStock().associateBy { Pair(it.productId, it.power) }
 
-        // 4. Unify and Calculate per Product Definition
+        // 4. Fetch Threshold Overrides
+        val thresholds = repository.getAllThresholds().associateBy { Pair(it.productId, it.power) }
+
+        // 5. Unify and Calculate per Product Definition
         activeProducts.forEach { product ->
             val trackingMode = try {
                 TrackingType.valueOf(product.trackingType)
@@ -47,10 +50,10 @@ class GetAvailableStockUseCase(
                 TrackingType.SERIAL -> {
                     val productSerials = serialStock.filterKeys { it.first == product.id }
                     if (productSerials.isEmpty()) {
-                        snapshots.add(createSnapshot(product, "", 0))
+                        snapshots.add(createSnapshot(product, "", 0, thresholds))
                     } else {
                         productSerials.forEach { (key, qty) ->
-                            snapshots.add(createSnapshot(product, key.second, qty))
+                            snapshots.add(createSnapshot(product, key.second, qty, thresholds))
                         }
                     }
                 }
@@ -70,11 +73,11 @@ class GetAvailableStockUseCase(
                         val sr = salesReturns[key]?.quantity ?: 0
                         val qty = os + p - pr - s + sr
                         
-                        snapshots.add(createSnapshot(product, power, qty))
+                        snapshots.add(createSnapshot(product, power, qty, thresholds))
                     }
                 }
                 null -> {
-                    snapshots.add(createSnapshot(product, "", 0))
+                    snapshots.add(createSnapshot(product, "", 0, thresholds))
                 }
             }
         }
@@ -85,8 +88,11 @@ class GetAvailableStockUseCase(
     private fun createSnapshot(
         product: com.vilync.ophthalmicerp.data.entity.ProductEntity, 
         power: String, 
-        qty: Int
+        qty: Int,
+        thresholds: Map<Pair<Long, String>, com.vilync.ophthalmicerp.data.entity.InventoryThresholdEntity>
     ): InventorySnapshot {
+        val override = thresholds[Pair(product.id, power)]
+        
         return InventorySnapshot(
             productId = product.id,
             productName = product.productName,
@@ -95,8 +101,8 @@ class GetAvailableStockUseCase(
             category = product.category,
             power = power,
             availableQuantity = qty,
-            minimumStock = product.minimumStock,
-            reorderLevel = product.reorderLevel,
+            minimumStock = override?.minimumStock ?: product.minimumStock,
+            reorderLevel = override?.reorderLevel ?: product.reorderLevel,
             maximumStock = product.maximumStock,
             reorderQuantity = product.reorderQuantity,
             leadTimeDays = product.leadTimeDays,

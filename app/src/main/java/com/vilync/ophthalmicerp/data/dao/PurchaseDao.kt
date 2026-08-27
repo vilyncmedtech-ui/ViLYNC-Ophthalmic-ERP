@@ -195,13 +195,16 @@ interface PurchaseDao {
         itemsWithLenses:
         List<Pair<PurchaseItemEntity, List<PurchaseLensEntity>>>
     ): Long {
+        android.util.Log.d("PURCHASE_SAVE_TRACE", "DAO: saveCompletePurchase() ENTERED")
 
         val purchaseId =
             insertPurchase(
                 purchase
             )
+        
+        android.util.Log.d("PURCHASE_SAVE_TRACE", "DAO: Header inserted. ID=$purchaseId")
 
-        itemsWithLenses.forEach { itemWithLenses ->
+        itemsWithLenses.forEachIndexed { itemIndex, itemWithLenses ->
 
             val item =
                 itemWithLenses.first
@@ -216,6 +219,8 @@ interface PurchaseDao {
                         purchaseId = purchaseId
                     )
                 )
+            
+            android.util.Log.d("PURCHASE_SAVE_TRACE", "DAO: Item $itemIndex inserted. ID=$purchaseItemId")
 
 
             if (lenses.isNotEmpty()) {
@@ -230,10 +235,11 @@ interface PurchaseDao {
                         )
                     }
                 )
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "DAO: ${lenses.size} Lenses inserted for item $itemIndex")
             }
         }
 
-
+        android.util.Log.d("PURCHASE_SAVE_TRACE", "DAO: saveCompletePurchase() SUCCESS. Returning purchaseId=$purchaseId")
         return purchaseId
     }
 
@@ -453,6 +459,19 @@ interface PurchaseDao {
     // =========================================================
     // PURCHASE REGISTER
     // =========================================================
+
+    @Query(
+        """
+        SELECT * FROM purchases
+        WHERE financialYearStart = :financialYearStart
+          AND status = :status
+        ORDER BY id DESC
+        """
+    )
+    fun getPurchasesByStatusAndFy(
+        status: String,
+        financialYearStart: Int
+    ): Flow<List<PurchaseEntity>>
 
     @Query(
         """

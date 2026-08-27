@@ -18,14 +18,6 @@ object StockRegisterExcelExporter {
     /**
      * Creates an Excel-compatible UTF-8 CSV file from the
      * Stock Register report.
-     *
-     * The generated file can be opened directly in:
-     *
-     * - Microsoft Excel
-     * - Google Sheets
-     * - LibreOffice Calc
-     *
-     * No external Excel library is required.
      */
     fun export(
         context: Context,
@@ -67,13 +59,6 @@ object StockRegisterExcelExporter {
                 )
 
 
-            /*
-             * UTF-8 BOM is intentionally written at the beginning.
-             *
-             * This improves compatibility with Microsoft Excel,
-             * especially when product/customer text may contain
-             * Indian-language or other Unicode characters.
-             */
             file.outputStream().use { outputStream ->
 
                 outputStream.write(
@@ -101,15 +86,6 @@ object StockRegisterExcelExporter {
     // SHARE / OPEN
     // =========================================================
 
-    /**
-     * Opens Android's share sheet for the generated
-     * Excel-compatible CSV file.
-     *
-     * IMPORTANT:
-     *
-     * FileProvider must exist in AndroidManifest before this
-     * function is connected to the UI.
-     */
     fun share(
         context: Context,
         file: File
@@ -249,6 +225,7 @@ object StockRegisterExcelExporter {
                 "Category",
                 "Power",
                 "Purchased",
+                "Sold",
                 "Returned",
                 "Available"
             )
@@ -266,6 +243,7 @@ object StockRegisterExcelExporter {
                     row.category,
                     row.power,
                     row.purchasedQuantity.toString(),
+                    row.soldQuantity.toString(),
                     row.returnedQuantity.toString(),
                     row.availableQuantity.toString()
                 )
@@ -285,6 +263,7 @@ object StockRegisterExcelExporter {
                 "",
                 "",
                 report.totalPurchased.toString(),
+                report.totalSold.toString(),
                 report.totalReturned.toString(),
                 report.totalAvailable.toString()
             )
@@ -319,17 +298,6 @@ object StockRegisterExcelExporter {
     // CSV ESCAPING
     // =========================================================
 
-    /**
-     * Always quotes CSV values.
-     *
-     * Embedded quotes are escaped according to CSV rules:
-     *
-     * ABC "Lens"
-     *
-     * becomes:
-     *
-     * "ABC ""Lens"""
-     */
     private fun escapeCsvValue(
         value: String
     ): String {

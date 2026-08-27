@@ -55,6 +55,17 @@ data class ChallanEntity(
 
 
     // =========================================================
+    // LENS LIBRARY
+    // =========================================================
+
+    /*
+     * If true, this Challan represents a physical stock issue
+     * specifically for the Lens Library program.
+     */
+    val asLibrary: Boolean = false,
+
+
+    // =========================================================
     // DOCUMENT LIFECYCLE
     // =========================================================
 

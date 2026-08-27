@@ -9,6 +9,7 @@ import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -21,9 +22,14 @@ object SalesRegisterExportSuite {
         title: String,
         rows: List<SalesRegisterRow>
     ): Result<Unit> = runCatching {
-        val file = File(context.cacheDir, safeName(title) + ".pdf")
+        val exportDir = File(context.cacheDir, "exports")
+        if (!exportDir.exists()) exportDir.mkdirs()
+
+        val file = File(exportDir, safeName(title) + ".pdf")
         writePdf(file, title, rows)
         share(context, file, "application/pdf")
+    }.onFailure {
+        Toast.makeText(context, "Export failed: ${it.message}", Toast.LENGTH_LONG).show()
     }
 
     fun exportExcelAndShare(
@@ -31,8 +37,11 @@ object SalesRegisterExportSuite {
         title: String,
         rows: List<SalesRegisterRow>
     ): Result<Unit> = runCatching {
+        val exportDir = File(context.cacheDir, "exports")
+        if (!exportDir.exists()) exportDir.mkdirs()
+
         // SpreadsheetML is an Excel-readable workbook without adding a third-party dependency.
-        val file = File(context.cacheDir, safeName(title) + ".xls")
+        val file = File(exportDir, safeName(title) + ".xls")
         OutputStreamWriter(FileOutputStream(file), Charsets.UTF_8).use { w ->
             w.write("""<?xml version="1.0" encoding="UTF-8"?>""")
             w.write("""<?mso-application progid="Excel.Sheet"?>""")

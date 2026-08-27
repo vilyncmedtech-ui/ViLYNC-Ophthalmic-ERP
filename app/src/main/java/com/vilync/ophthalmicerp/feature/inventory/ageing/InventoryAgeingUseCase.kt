@@ -3,38 +3,49 @@ package com.vilync.ophthalmicerp.feature.inventory.ageing
 import com.vilync.ophthalmicerp.core.reports.domain.ReportRowData
 import com.vilync.ophthalmicerp.data.repository.InventoryRepository
 import com.vilync.ophthalmicerp.data.repository.ProductRepository
+import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
 import kotlinx.coroutines.flow.first
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.concurrent.TimeUnit
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 class InventoryAgeingUseCase(
     private val inventoryRepository: InventoryRepository,
-    private val productRepository: ProductRepository
+    private val productRepository: ProductRepository,
+    private val partyRepository: PartyRepository
 ) {
     companion object {
-        const val BUCKET_0_30 = "0-30 Days"
-        const val BUCKET_31_60 = "31-60 Days"
-        const val BUCKET_61_90 = "61-90 Days"
-        const val BUCKET_91_180 = "91-180 Days"
-        const val BUCKET_181_PLUS = "180+ Days"
-        
-        val ALL_BUCKETS = listOf(
-            BUCKET_0_30,
-            BUCKET_31_60,
-            BUCKET_61_90,
-            BUCKET_91_180,
-            BUCKET_181_PLUS
-        )
+        const val RISK_FRESH = "Fresh"
+        const val RISK_SENSITIVE = "Sensitive"
+        const val RISK_ON_RISK = "On Risk"
+        const val RISK_HIGH_RISK = "High Risk"
+        const val RISK_EXPIRED = "Expired"
 
-        fun getBucket(ageDays: Long): String {
+        fun getExpiryRisk(daysLeft: Long): String {
             return when {
-                ageDays <= 30 -> BUCKET_0_30
-                ageDays <= 60 -> BUCKET_31_60
-                ageDays <= 90 -> BUCKET_61_90
-                ageDays <= 180 -> BUCKET_91_180
-                else -> BUCKET_181_PLUS
+                daysLeft > 365 -> RISK_FRESH
+                daysLeft >= 181 -> RISK_SENSITIVE
+                daysLeft >= 91 -> RISK_ON_RISK
+                daysLeft >= 1 -> RISK_HIGH_RISK
+                else -> RISK_EXPIRED
+            }
+        }
+
+        /**
+         * Parses MMYY string and returns the last day of that month.
+         * Example: 1229 -> 2029-12-31
+         */
+        fun parseExpiryDate(mmyy: String): LocalDate? {
+            val clean = mmyy.filter { it.isDigit() }
+            if (clean.length != 4) return null
+            
+            return try {
+                val formatter = DateTimeFormatter.ofPattern("MMyy")
+                val ym = YearMonth.parse(clean, formatter)
+                ym.atEndOfMonth()
+            } catch (e: Exception) {
+                null
             }
         }
     }
@@ -44,21 +55,56 @@ class InventoryAgeingUseCase(
         val productMap = products.associateBy { it.id }
         
         val inStockUnits = inventoryRepository.getInStockUnits().first()
-        val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
-        val today = Date()
+        
+        val productFilterId = filters["product"]?.toString() ?: "0"
+        val categoryFilter = filters["category"]?.toString() ?: "All Categories"
+        val powerFilter = filters["power"]?.toString() ?: "All"
+        val batchFilter = filters["batch"]?.toString() ?: ""
+        val vendorFilterId = filters["vendor"]?.toString() ?: "0"
+        val riskFilter = filters["expiry_risk"]?.toString() ?: "All"
+
+        // Resolve vendor name for filtering
+        val selectedVendorName = if (vendorFilterId != "0") {
+            partyRepository.getPartyById(vendorFilterId.toLongOrNull() ?: 0L)?.partyName
+        } else null
+
+        val today = LocalDate.now()
+        val displayFormatter = DateTimeFormatter.ofPattern("dd-MM-yyyy")
 
         return inStockUnits.mapNotNull { unit ->
             val product = productMap[unit.productId] ?: return@mapNotNull null
             
-            val receivedDate = try {
-                sdf.parse(unit.receivedDate) ?: today
-            } catch (e: Exception) {
-                today
+            // Apply Filters Early (Product, Category, Power, Batch, Vendor)
+            val matchesProduct = productFilterId == "0" || unit.productId.toString() == productFilterId
+            val matchesCategory = categoryFilter == "All Categories" || product.category == categoryFilter
+            val matchesPower = powerFilter == "All" || unit.power == powerFilter
+            val matchesBatch = batchFilter.isBlank() || unit.batchNumber.contains(batchFilter, ignoreCase = true)
+            
+            val matchesVendor = selectedVendorName == null || 
+                    unit.supplierName.equals(selectedVendorName, ignoreCase = true)
+            
+            if (!matchesProduct || !matchesCategory || !matchesPower || !matchesBatch || !matchesVendor) return@mapNotNull null
+
+            // Expiry Calculation
+            val expiryDate = parseExpiryDate(unit.expiryDate)
+            
+            // Handle missing/invalid expiry safely: display N/A, skip risk filtering unless "All"
+            val daysLeft: Long?
+            val riskStatus: String
+            val displayExpiry: String
+
+            if (expiryDate != null) {
+                daysLeft = ChronoUnit.DAYS.between(today, expiryDate)
+                riskStatus = getExpiryRisk(daysLeft)
+                displayExpiry = expiryDate.format(displayFormatter)
+            } else {
+                daysLeft = null
+                riskStatus = "N/A"
+                displayExpiry = unit.expiryDate.ifBlank { "N/A" }
             }
             
-            val diffInMs = today.time - receivedDate.time
-            val ageDays = TimeUnit.MILLISECONDS.toDays(diffInMs).coerceAtLeast(0)
-            val bucket = getBucket(ageDays)
+            // Expiry Risk Filter
+            if (riskFilter != "All" && riskStatus != riskFilter) return@mapNotNull null
 
             ReportRowData(
                 id = unit.id,
@@ -69,35 +115,14 @@ class InventoryAgeingUseCase(
                     "power" to unit.power,
                     "batch" to unit.batchNumber,
                     "serial" to unit.serialNumber,
-                    "receivedDate" to unit.receivedDate,
-                    "ageDays" to ageDays.toString(),
-                    "bucket" to bucket,
+                    "expiryDate" to displayExpiry,
+                    "daysLeft" to (daysLeft?.toString() ?: "—"),
+                    "expiryStatus" to riskStatus,
                     "status" to unit.status,
                     "vendor" to unit.supplierName,
-                    "location" to "Main Store" // Default as per architecture verify
+                    "location" to "Main Store"
                 )
             )
-        }.filter { row ->
-            // Apply Filters
-            val productFilter = filters["product"]?.toString() ?: "All Products"
-            val categoryFilter = filters["category"]?.toString() ?: "All Categories"
-            val powerFilter = filters["power"]?.toString() ?: "All"
-            val batchFilter = filters["batch"]?.toString() ?: ""
-            val vendorFilter = filters["vendor"]?.toString() ?: "0"
-            val bucketFilter = filters["bucket"]?.toString() ?: "All"
-            
-            val matchesProduct = productFilter == "All Products" || row.values["product"] == productFilter
-            val matchesCategory = categoryFilter == "All Categories" || row.values["category"] == categoryFilter
-            val matchesPower = powerFilter == "All" || row.values["power"] == powerFilter
-            val matchesBatch = batchFilter.isBlank() || row.values["batch"].toString().contains(batchFilter, ignoreCase = true)
-            val matchesBucket = bucketFilter == "All" || row.values["bucket"] == bucketFilter
-            
-            // Vendor filter in ERP usually uses ID, but here we have name in row. 
-            // For now, if "0" (All), it matches. If not "0", we would need party master lookup.
-            // Keeping it simple as per implementation rules.
-            val matchesVendor = vendorFilter == "0"
-            
-            matchesProduct && matchesCategory && matchesPower && matchesBatch && matchesBucket && matchesVendor
-        }.sortedByDescending { it.values["ageDays"]?.toString()?.toLongOrNull() ?: 0L }
+        }.sortedBy { it.values["daysLeft"]?.toString()?.toLongOrNull() ?: Long.MAX_VALUE }
     }
 }

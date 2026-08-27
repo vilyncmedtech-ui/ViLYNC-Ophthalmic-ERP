@@ -1,7 +1,6 @@
 package com.vilync.ophthalmicerp.feature.sales.challan.presentation
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,24 +26,24 @@ fun ChallanDetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
-        uri?.let {
-            val challan = uiState.challan
-            if (challan != null) {
-                ChallanExportSuite.exportPdf(context, it, challan, uiState.items)
-            }
-        }
-    }
-
     Scaffold(
         topBar = {
             StandardDetailHeader(
                 title = "Delivery Challan",
                 onBack = onBack,
                 onDashboard = onDashboard,
-                onPrint = { uiState.challan?.let { ChallanExportSuite.print(context, it, uiState.items) } },
-                onPdf = { uiState.challan?.let { pdfLauncher.launch("Challan_${it.challanNumber.replace("/", "_")}.pdf") } },
-                onShare = { /* TODO */ },
+                onPrint = { uiState.challan?.let { 
+                    ChallanExportSuite.print(context, it, uiState.lines, uiState.companyProfile, uiState.customer) 
+                } },
+                onPdf = { uiState.challan?.let { challan ->
+                    ChallanExportSuite.sharePdf(context, challan, uiState.lines, uiState.companyProfile, uiState.customer)
+                } },
+                onExcel = {
+                    uiState.challan?.let { challan ->
+                        val rawItems = uiState.lines.flatMap { it.items }
+                        ChallanExportSuite.exportExcelAndShare(context, challan, rawItems)
+                    }
+                },
                 onEdit = { uiState.challan?.let { onEdit(it.id) } },
                 isEditable = uiState.challan?.status == "OPEN" || uiState.challan?.status == "PARTIALLY_SETTLED"
             )
@@ -78,12 +78,44 @@ fun ChallanDetailScreen(
                 item {
                     Text("ITEMS", fontWeight = FontWeight.Bold)
                 }
-                items(uiState.items) { item ->
+                items(uiState.lines) { line ->
+                    val item = line.item
+                    val qty = line.items.size
                     Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp)) {
-                            Text(item.productName, fontWeight = FontWeight.Bold)
-                            Text("Serial: ${item.serialNumber} • Power: ${item.power}")
-                            Text("Settlement: ${item.settlementStatus}")
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(item.productName, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                if (line.hsn.isNotBlank()) {
+                                    Text("HSN: ${line.hsn}", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            Text("Power: ${item.power} • Qty: $qty")
+                            
+                            if (line.items.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text("Serials", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                FlowRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    line.items.forEach { lens ->
+                                        SuggestionChip(
+                                            onClick = { },
+                                            label = { 
+                                                Text(
+                                                    "${lens.serialNumber} ${formatExp(lens.expiryDate)}",
+                                                    fontSize = 11.sp
+                                                ) 
+                                            },
+                                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                                containerColor = Color(0xFFF4F9FF)
+                                            ),
+                                            border = BorderStroke(1.dp, Color(0xFFDDEAF5))
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -100,4 +132,9 @@ fun ChallanDetailScreen(
             }
         }
     }
+}
+
+private fun formatExp(v: String): String {
+    val t = v.trim()
+    return if (t.length == 4 && t.all { it.isDigit() }) "${t.substring(0, 2)}/${t.substring(2, 4)}" else t
 }

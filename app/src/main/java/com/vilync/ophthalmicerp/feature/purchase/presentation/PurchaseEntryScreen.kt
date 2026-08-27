@@ -5,7 +5,6 @@ import androidx.activity.compose.BackHandler
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -152,7 +151,6 @@ fun PurchaseEntryScreen(
             .fillMaxSize()
             .background(VilyncPageBackground)
             .verticalScroll(rememberScrollState())
-            .imePadding()
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -667,6 +665,7 @@ fun PurchaseEntryScreen(
 
         Button(
             onClick = {
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "UI: Save button clicked. isSaving=${uiState.isSaving}, isDirty=${uiState.isDirty}, itemsCount=${uiState.items.size}")
                 viewModel.savePurchase()
             },
             enabled = !uiState.isSaving &&
@@ -872,7 +871,8 @@ private fun PurchaseTextField(
     label: String,
     modifier: Modifier = Modifier,
     keyboardType: KeyboardType = KeyboardType.Text,
-    imeAction: ImeAction = ImeAction.Next
+    imeAction: ImeAction = ImeAction.Next,
+    readOnly: Boolean = false
 ) {
     val focusManager = LocalFocusManager.current
     val bringIntoViewRequester = remember { BringIntoViewRequester() }
@@ -888,6 +888,7 @@ private fun PurchaseTextField(
             )
         },
         singleLine = true,
+        readOnly = readOnly,
 
         // ViLYNC Smart Entry Mode:
         // correct keyboard + explicit IME behaviour.

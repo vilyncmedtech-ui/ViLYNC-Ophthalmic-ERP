@@ -6,6 +6,8 @@ import com.vilync.ophthalmicerp.data.entity.SaleEntity
 import com.vilync.ophthalmicerp.data.entity.SalesCreditNoteEntity
 import com.vilync.ophthalmicerp.data.entity.SalesCreditNoteItemEntity
 import com.vilync.ophthalmicerp.data.entity.SalesCreditNoteLensEntity
+import com.vilync.ophthalmicerp.data.repository.DocumentNumberingRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentType
 import com.vilync.ophthalmicerp.data.repository.SalesCreditNoteRepository
 import com.vilync.ophthalmicerp.data.repository.SalesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,11 +22,16 @@ import kotlin.math.round
 
 class NewCreditNoteViewModel(
     private val salesRepository: SalesRepository,
-    private val creditNoteRepository: SalesCreditNoteRepository
+    private val creditNoteRepository: SalesCreditNoteRepository,
+    private val numberingRepository: DocumentNumberingRepository,
+    private val editingId: Long? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
-        NewCreditNoteUiState(creditNoteDate = today())
+        NewCreditNoteUiState(
+            editingId = editingId,
+            creditNoteDate = today()
+        )
     )
     val uiState: StateFlow<NewCreditNoteUiState> = _uiState.asStateFlow()
 
@@ -35,6 +42,69 @@ class NewCreditNoteViewModel(
             allInvoices = salesRepository.getAllSales().first()
                 .filter { !it.status.equals("CANCELLED", true) }
             applyInvoiceFilter()
+
+            if (editingId != null) {
+                loadCreditNoteForEdit(editingId)
+            }
+        }
+    }
+
+    private fun loadCreditNoteForEdit(id: Long) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingInvoice = true)
+            runCatching {
+                val cn = requireNotNull(creditNoteRepository.getCreditNoteById(id))
+                val cnItems = creditNoteRepository.getItemsByCreditNoteId(id)
+                val cnLenses = creditNoteRepository.getLensesByCreditNoteId(id)
+
+                val originalSale = requireNotNull(salesRepository.getSaleById(cn.originalSaleId ?: 0L))
+                val originalSaleItems = salesRepository.getSaleItems(originalSale.id).first()
+                
+                // Map original invoice lines
+                val invoiceLines = originalSaleItems.flatMap { item ->
+                    val lenses = salesRepository.getSaleLenses(item.id).first()
+                    val quantityDivisor = if (item.quantity > 0) item.quantity.toDouble() else 1.0
+                    lenses.map { lens ->
+                        val isSelected = cnLenses.any { it.originalSaleLensId == lens.id && it.returnToStock }
+                        CreditNoteInvoiceLineUi(
+                            saleItemId = item.id,
+                            saleLensId = lens.id,
+                            inventoryUnitId = lens.inventoryUnitId,
+                            productId = item.productId,
+                            productName = item.productName,
+                            serialNumber = lens.serialNumber,
+                            power = lens.power.ifBlank { item.power },
+                            batchNumber = lens.batchNumber.ifBlank { item.batchNumber },
+                            expiryDate = lens.expiryDate,
+                            rate = item.rate,
+                            discountPercent = item.discountPercent,
+                            gstPercent = item.gstPercent,
+                            taxableAmount = money(item.taxableAmount / quantityDivisor),
+                            gstAmount = money(item.gstAmount / quantityDivisor),
+                            totalAmount = money(item.totalAmount / quantityDivisor),
+                            selected = isSelected
+                        )
+                    }
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    selectedInvoice = originalSale,
+                    invoiceQuery = "${originalSale.invoiceNumber} • ${originalSale.customerName}",
+                    creditNoteNumber = cn.creditNoteNumber,
+                    creditNoteDate = cn.creditNoteDate,
+                    creditNoteType = cn.creditNoteType,
+                    reason = cn.reason,
+                    remarks = cn.remarks,
+                    adjustmentAmount = if (cn.creditNoteType == "FINANCIAL_ADJUSTMENT") cn.adjustment.toString() else "",
+                    invoiceLines = invoiceLines,
+                    isLoadingInvoice = false
+                )
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(
+                    isLoadingInvoice = false,
+                    errorMessage = "Unable to load existing Credit Note: ${it.message}"
+                )
+            }
         }
     }
 
@@ -88,11 +158,30 @@ class NewCreditNoteViewModel(
                 }
             }.onSuccess { lines ->
                 _uiState.value = _uiState.value.copy(invoiceLines = lines, isLoadingInvoice = false)
+                
+                // Early Number Generation for New Credit Note
+                if (_uiState.value.creditNoteNumber.isBlank()) {
+                    generateNextNumber()
+                }
+                
             }.onFailure {
                 _uiState.value = _uiState.value.copy(
                     isLoadingInvoice = false,
                     errorMessage = it.message ?: "Unable to load invoice details."
                 )
+            }
+        }
+    }
+
+    private fun generateNextNumber() {
+        viewModelScope.launch {
+            runCatching {
+                val fyStart = financialYearStart(_uiState.value.creditNoteDate)
+                numberingRepository.getNextDocumentNumber(DocumentType.CREDIT_NOTE, fyStart)
+            }.onSuccess { number ->
+                _uiState.value = _uiState.value.copy(creditNoteNumber = number)
+            }.onFailure {
+                _uiState.value = _uiState.value.copy(errorMessage = "Unable to generate Credit Note Number.")
             }
         }
     }
@@ -133,10 +222,13 @@ class NewCreditNoteViewModel(
             _uiState.value = state.copy(errorMessage = "Select the original Sales Invoice.")
             return
         }
+        
+        // Validation now allows system-generated number (handled in selectInvoice)
         if (state.creditNoteNumber.trim().isBlank()) {
             _uiState.value = state.copy(errorMessage = "Credit Note Number is required.")
             return
         }
+        
         if (state.creditNoteDate.trim().isBlank()) {
             _uiState.value = state.copy(errorMessage = "Credit Note Date is required.")
             return
@@ -220,41 +312,51 @@ class NewCreditNoteViewModel(
                 val total = money(itemsWithLenses.sumOf { it.first.totalAmount })
                 val intra = sale.gstSupplyType.equals("INTRA_STATE", true)
 
-                creditNoteRepository.saveCompleteCreditNote(
-                    SalesCreditNoteEntity(
-                        customerId = sale.customerId,
-                        customerName = sale.customerName,
-                        billToLegalName = sale.billToLegalName,
-                        billToGstin = sale.billToGstin,
-                        billToAddress = sale.billToAddress,
-                        billToState = sale.billToState,
-                        creditNoteNumber = state.creditNoteNumber.trim(),
-                        normalizedCreditNoteNumber = state.creditNoteNumber.trim().uppercase(),
-                        creditNoteDate = state.creditNoteDate.trim(),
-                        financialYearStart = financialYearStart(state.creditNoteDate),
-                        originalSaleId = sale.id,
-                        originalInvoiceNumber = sale.invoiceNumber,
-                        originalInvoiceDate = sale.invoiceDate,
-                        placeOfSupplyState = sale.placeOfSupplyState,
-                        gstSupplyType = sale.gstSupplyType,
-                        creditNoteType = state.creditNoteType,
-                        subTotal = taxable,
-                        discountAmount = money(itemsWithLenses.sumOf { it.first.discountAmount }),
-                        taxableAmount = taxable,
-                        gstAmount = gst,
-                        cgstAmount = if (intra) money(gst / 2.0) else 0.0,
-                        sgstAmount = if (intra) money(gst / 2.0) else 0.0,
-                        igstAmount = if (intra) 0.0 else gst,
-                        adjustment = if (state.creditNoteType == "FINANCIAL_ADJUSTMENT") adjustment else 0.0,
-                        roundOff = 0.0,
-                        totalAmount = total,
-                        reason = state.reason,
-                        remarks = state.remarks,
-                        createdAt = now,
-                        updatedAt = now
-                    ),
-                    itemsWithLenses
+                val creditNoteEntity = SalesCreditNoteEntity(
+                    customerId = sale.customerId,
+                    customerName = sale.customerName,
+                    billToLegalName = sale.billToLegalName,
+                    billToGstin = sale.billToGstin,
+                    billToAddress = sale.billToAddress,
+                    billToState = sale.billToState,
+                    creditNoteNumber = state.creditNoteNumber.trim(),
+                    normalizedCreditNoteNumber = state.creditNoteNumber.trim().uppercase(),
+                    creditNoteDate = state.creditNoteDate.trim(),
+                    financialYearStart = financialYearStart(state.creditNoteDate),
+                    originalSaleId = sale.id,
+                    originalInvoiceNumber = sale.invoiceNumber,
+                    originalInvoiceDate = sale.invoiceDate,
+                    placeOfSupplyState = sale.placeOfSupplyState,
+                    gstSupplyType = sale.gstSupplyType,
+                    creditNoteType = state.creditNoteType,
+                    subTotal = taxable,
+                    discountAmount = money(itemsWithLenses.sumOf { it.first.discountAmount }),
+                    taxableAmount = taxable,
+                    gstAmount = gst,
+                    cgstAmount = if (intra) money(gst / 2.0) else 0.0,
+                    sgstAmount = if (intra) money(gst / 2.0) else 0.0,
+                    igstAmount = if (intra) 0.0 else gst,
+                    adjustment = if (state.creditNoteType == "FINANCIAL_ADJUSTMENT") adjustment else 0.0,
+                    roundOff = 0.0,
+                    totalAmount = total,
+                    reason = state.reason,
+                    remarks = state.remarks,
+                    createdAt = now,
+                    updatedAt = now
                 )
+
+                if (state.editingId != null) {
+                    creditNoteRepository.updateCompleteCreditNote(
+                        creditNoteId = state.editingId,
+                        creditNote = creditNoteEntity,
+                        itemsWithLenses = itemsWithLenses
+                    )
+                } else {
+                    creditNoteRepository.saveCompleteCreditNote(
+                        creditNote = creditNoteEntity,
+                        itemsWithLenses = itemsWithLenses
+                    )
+                }
             }.onSuccess { id ->
                 _uiState.value = _uiState.value.copy(
                     isSaving = false,

@@ -4,16 +4,8 @@ package com.vilync.ophthalmicerp.data.dao
  * Room query projection used by Inventory Stock Register.
  *
  * This is NOT a database table/entity.
- * Values are calculated from stock-affecting transactions.
- *
- * Current phase:
- * Purchase IN
- * minus
- * Active Purchase Return OUT
- *
- * Future inventory sources such as Opening Stock,
- * Stock Adjustment and Sales can be incorporated into
- * the Inventory stock query without changing the UI model.
+ * Values are calculated from stock-affecting transactions and
+ * current physical inventory status.
  */
 data class InventoryStockRow(
 
@@ -30,6 +22,10 @@ data class InventoryStockRow(
     val purchasedQuantity: Int,
 
     val purchaseReturnQuantity: Int,
+
+    val soldQuantity: Int,
+
+    val otherOutQuantity: Int,
 
     val availableQuantity: Int
 )

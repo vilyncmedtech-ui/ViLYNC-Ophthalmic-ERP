@@ -51,6 +51,11 @@ interface SerialStockDao {
             ) AS category,
 
             COALESCE(
+                p.serialPrefix,
+                ''
+            ) AS serialPrefix,
+
+            COALESCE(
                 iu.power,
                 ''
             ) AS power,
@@ -149,6 +154,11 @@ interface SerialStockDao {
                 p.category,
                 ''
             ) AS category,
+
+            COALESCE(
+                p.serialPrefix,
+                ''
+            ) AS serialPrefix,
 
             COALESCE(
                 iu.power,
@@ -268,6 +278,11 @@ interface SerialStockDao {
             ) AS category,
 
             COALESCE(
+                p.serialPrefix,
+                ''
+            ) AS serialPrefix,
+
+            COALESCE(
                 iu.power,
                 ''
             ) AS power,
@@ -361,6 +376,11 @@ interface SerialStockDao {
                 p.category,
                 ''
             ) AS category,
+
+            COALESCE(
+                p.serialPrefix,
+                ''
+            ) AS serialPrefix,
 
             COALESCE(
                 iu.power,

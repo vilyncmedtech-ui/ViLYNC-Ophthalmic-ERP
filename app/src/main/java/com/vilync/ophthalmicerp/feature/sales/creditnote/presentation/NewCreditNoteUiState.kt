@@ -3,6 +3,7 @@ package com.vilync.ophthalmicerp.feature.sales.creditnote.presentation
 import com.vilync.ophthalmicerp.data.entity.SaleEntity
 
 data class NewCreditNoteUiState(
+    val editingId: Long? = null,
     val invoices: List<SaleEntity> = emptyList(),
     val invoiceQuery: String = "",
     val selectedInvoice: SaleEntity? = null,

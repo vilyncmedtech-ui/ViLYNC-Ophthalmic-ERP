@@ -2,6 +2,7 @@ package com.vilync.ophthalmicerp.feature.backup.logic
 
 import android.content.Context
 import android.util.Log
+import com.google.android.gms.auth.GoogleAuthUtil
 import com.google.api.client.http.FileContent
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.File as DriveFile
@@ -18,7 +19,7 @@ import java.security.MessageDigest
  * Responsibilities:
  * - Atomic database duplication.
  * - Payload checksum generation.
- * - Google Drive service initialization.
+ * - Google Drive service initialization with Account Visibility Bridge.
  * - ERP folder management in Drive.
  */
 class GoogleDriveBackupService(
@@ -34,13 +35,71 @@ class GoogleDriveBackupService(
     }
 
     private var driveService: Drive? = null
+    private var initializedEmail: String? = null
 
     /**
-     * Initializes the Drive client using the factory.
+     * Initializes the Drive client using the factory after ensuring account visibility.
+     * 
+     * Idempotent: Does nothing if already initialized for the same email.
      */
-    fun initializeDriveService(email: String) {
-        driveService = GoogleDriveClientFactory.createDriveService(context, email)
-        Log.d(TAG, "Drive service initialized for $email")
+    suspend fun initializeDriveService(email: String): Result<Unit> = withContext(Dispatchers.IO) {
+        if (email.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Cannot initialize Drive service with blank email."))
+        }
+
+        // 1. Ensure Account Visibility via Bridge (MUST be on background thread)
+        try {
+            // This is the CRITICAL fix for "name must not be empty: null"
+            // It whitelists the app in AccountManager for this specific email.
+            GoogleAuthUtil.requestGoogleAccountsAccess(context)
+            Log.i(TAG, "Account visibility bridge verified for $email")
+        } catch (e: Exception) {
+            // Log and rethrow if it's a UserRecoverableAuthException so ViewModel can handle it
+            if (e.javaClass.name.contains("UserRecoverableAuthException")) {
+                Log.w(TAG, "Account visibility requires user interaction for $email")
+                return@withContext Result.failure(e)
+            }
+            Log.e(TAG, "Account visibility bridge failed for $email: ${e.message}")
+            // We do NOT proceed if the bridge fails with a non-recoverable error
+            return@withContext Result.failure(e)
+        }
+
+        if (driveService != null && initializedEmail == email) {
+            Log.d(TAG, "Drive service already initialized for $email. Skipping.")
+            return@withContext Result.success(Unit)
+        }
+
+        try {
+            driveService = GoogleDriveClientFactory.createDriveService(context, email)
+            initializedEmail = email
+            Log.i(TAG, "Drive service instance created for $email")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create Drive service for $email", e)
+            initializedEmail = null
+            driveService = null
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Resets the Drive service state, typically used during sign-out or account change.
+     */
+    fun resetService() {
+        driveService = null
+        initializedEmail = null
+        Log.d(TAG, "Drive service state reset.")
+    }
+
+    /**
+     * Internal guard to ensure the service is ready for cloud operations.
+     */
+    private fun getReadyService(): Drive {
+        val service = driveService
+        if (service == null || initializedEmail.isNullOrBlank()) {
+            throw IllegalStateException("Google Drive service not initialized. Call initializeDriveService first.")
+        }
+        return service
     }
 
     /**
@@ -48,9 +107,9 @@ class GoogleDriveBackupService(
      */
     suspend fun verifyDriveAccess(): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val service = driveService ?: throw Exception("Drive service not initialized.")
+            val service = getReadyService()
             service.about().get().setFields("user").execute()
-            Log.d(TAG, "Drive access verified.")
+            Log.d(TAG, "Drive access verified for $initializedEmail")
             Unit
         }
     }
@@ -60,7 +119,7 @@ class GoogleDriveBackupService(
      */
     suspend fun findOrCreateBackupFolder(): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val service = driveService ?: throw Exception("Drive service not initialized.")
+            val service = getReadyService()
             
             // 1. Try finding existing folder from settings
             val savedId = settingsManager.getGoogleDriveFolderId()
@@ -71,17 +130,18 @@ class GoogleDriveBackupService(
                         return@runCatching savedId
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "Saved folder ID invalid or inaccessible. Searching...")
+                    Log.w(TAG, "Saved folder ID invalid or inaccessible ($savedId). Searching...")
                 }
             }
 
             // 2. Search for folder by name
             val query = "name = '$FOLDER_NAME' and mimeType = '$FOLDER_MIME_TYPE' and trashed = false"
             val result = service.files().list().setQ(query).setSpaces("drive").execute()
-            val existingFolder = result.files.firstOrNull()
+            val existingFolder = result.files?.firstOrNull()
 
             if (existingFolder != null) {
                 settingsManager.saveGoogleDriveFolderId(existingFolder.id)
+                Log.d(TAG, "Found existing ERP backup folder: ${existingFolder.id}")
                 return@runCatching existingFolder.id
             }
 
@@ -92,7 +152,7 @@ class GoogleDriveBackupService(
             }
             val newFolder = service.files().create(metadata).setFields("id").execute()
             settingsManager.saveGoogleDriveFolderId(newFolder.id)
-            Log.d(TAG, "Created new ERP backup folder: ${newFolder.id}")
+            Log.i(TAG, "Created new ERP backup folder: ${newFolder.id}")
             newFolder.id
         }
     }
@@ -137,10 +197,7 @@ class GoogleDriveBackupService(
         fileName: String,
         appProperties: Map<String, String>
     ): Result<String> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "uploadToDrive() - Start")
-        Log.d(TAG, "Target Filename: $fileName")
-        Log.d(TAG, "Local File: ${file.absolutePath} | Exists: ${file.exists()} | Size: ${file.length()}")
-        Log.d(TAG, "Parent Folder ID: $folderId")
+        Log.d(TAG, "uploadToDrive() initiated for $fileName")
 
         if (fileName.isBlank()) {
             return@withContext Result.failure(Exception("Upload blocked: fileName is null or blank."))
@@ -151,26 +208,23 @@ class GoogleDriveBackupService(
         }
 
         runCatching {
-            val service = driveService ?: throw Exception("Drive service not initialized.")
+            val service = getReadyService()
 
             val metadata = DriveFile()
             metadata.setName(fileName)
             metadata.setParents(listOf(folderId))
             metadata.setAppProperties(appProperties)
 
-            Log.d(TAG, "Drive Metadata Name set to: ${metadata.name}")
-
             val content = FileContent("application/x-sqlite3", file)
             
-            Log.d(TAG, "Executing Drive API create request...")
             val driveFile = service.files().create(metadata, content)
                 .setFields("id")
                 .execute()
 
-            Log.d(TAG, "Upload SUCCESS. Drive ID: ${driveFile.id}")
+            Log.i(TAG, "Upload SUCCESS. Drive ID: ${driveFile.id}")
             driveFile.id
         }.onFailure { e ->
-            Log.e(TAG, "Upload FAILED at Drive API level: ${e.message}", e)
+            Log.e(TAG, "Upload FAILED for $fileName: ${e.message}", e)
         }
     }
 
@@ -183,7 +237,7 @@ class GoogleDriveBackupService(
         expectedChecksum: String
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val service = driveService ?: throw Exception("Drive service not initialized.")
+            val service = getReadyService()
             
             val driveFile = service.files().get(driveFileId)
                 .setFields("id, size, appProperties")
@@ -200,7 +254,7 @@ class GoogleDriveBackupService(
                 throw Exception("Verification failed: Checksum mismatch")
             }
 
-            Log.d(TAG, "Uploaded file verified successfully.")
+            Log.d(TAG, "Uploaded file verification PASSED for $driveFileId")
             Unit
         }
     }
@@ -210,7 +264,7 @@ class GoogleDriveBackupService(
      */
     suspend fun listCloudBackups(folderId: String): Result<List<DriveFile>> = withContext(Dispatchers.IO) {
         runCatching {
-            val service = driveService ?: throw Exception("Drive service not initialized.")
+            val service = getReadyService()
             val query = "'$folderId' in parents and trashed = false"
             val result = service.files().list()
                 .setQ(query)
@@ -226,14 +280,17 @@ class GoogleDriveBackupService(
      */
     suspend fun downloadFromDrive(driveFileId: String, destination: File): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val service = driveService ?: throw Exception("Drive service not initialized.")
+            val service = getReadyService()
             if (destination.exists()) destination.delete()
             
+            Log.d(TAG, "DOWNLOAD_START: File $driveFileId to ${destination.absolutePath}")
             FileOutputStream(destination).use { output ->
                 service.files().get(driveFileId).executeMediaAndDownloadTo(output)
             }
-            Log.d(TAG, "File downloaded successfully: ${destination.absolutePath}")
+            Log.i(TAG, "DOWNLOAD_COMPLETE: Local size ${destination.length()}")
             Unit
+        }.onFailure { e ->
+            Log.e(TAG, "DOWNLOAD_FAILED for $driveFileId: ${e.message}", e)
         }
     }
 

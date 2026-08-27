@@ -3,9 +3,11 @@ package com.vilync.ophthalmicerp.feature.sales.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.vilync.ophthalmicerp.data.repository.ChallanRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentNumberingRepository
 import com.vilync.ophthalmicerp.data.repository.InventoryRepository
 import com.vilync.ophthalmicerp.data.repository.ProductRepository
 import com.vilync.ophthalmicerp.data.repository.SalesRepository
+import com.vilync.ophthalmicerp.data.repository.SampleIssueRepository
 import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
 
 class SalesViewModelFactory(
@@ -14,6 +16,8 @@ class SalesViewModelFactory(
     private val productRepository: ProductRepository,
     private val inventoryRepository: InventoryRepository,
     private val challanRepository: ChallanRepository,
+    private val sampleIssueRepository: SampleIssueRepository,
+    private val numberingRepository: DocumentNumberingRepository,
     private val editSaleId: Long? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
@@ -25,6 +29,8 @@ class SalesViewModelFactory(
                 productRepository = productRepository,
                 inventoryRepository = inventoryRepository,
                 challanRepository = challanRepository,
+                sampleIssueRepository = sampleIssueRepository,
+                numberingRepository = numberingRepository,
                 editSaleId = editSaleId
             ) as T
         }

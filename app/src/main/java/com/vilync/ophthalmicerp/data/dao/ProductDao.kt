@@ -252,4 +252,11 @@ interface ProductDao {
     suspend fun deleteProduct(
         productId: Long
     ): Int
+
+    // =========================================================
+    // STARTUP / BOOTSTRAP
+    // =========================================================
+
+    @Query("SELECT COUNT(*) FROM products")
+    suspend fun getProductCount(): Int
 }

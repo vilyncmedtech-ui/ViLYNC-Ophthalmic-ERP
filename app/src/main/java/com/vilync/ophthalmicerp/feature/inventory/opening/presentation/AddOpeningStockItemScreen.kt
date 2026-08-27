@@ -16,12 +16,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vilync.ophthalmicerp.feature.master.product.data.ProductMasterRepository
 import com.vilync.ophthalmicerp.feature.master.product.model.ProductMaster
+import com.vilync.ophthalmicerp.core.util.SerialFormatter
 import kotlinx.coroutines.launch
+import kotlin.math.round
+
+/**
+ * Local state for a single physical serialized unit.
+ */
+data class OpeningStockUnitEntry(
+    val rawSerial: String = "",
+    val serialNumber: String = "",
+    val expiryDate: String = ""
+)
 
 @Composable
 fun AddOpeningStockItemScreen(
     productRepository: ProductMasterRepository,
-    onAddItem: (OpeningStockUiItem) -> Unit,
+    onAddItem: (List<OpeningStockUiItem>) -> Unit,
     onBack: () -> Unit
 ) {
     var productName by remember { mutableStateOf("") }
@@ -29,14 +40,34 @@ fun AddOpeningStockItemScreen(
     var model by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var power by remember { mutableStateOf("") }
-    var batchSerial by remember { mutableStateOf("") }
+    var batchNumber by remember { mutableStateOf("") }
     var expiryDate by remember { mutableStateOf("") }
     var quantity by remember { mutableStateOf("1") }
-    var unitCost by remember { mutableStateOf("0") }
+    var rate by remember { mutableStateOf("0") }
+    var gstPercent by remember { mutableStateOf("0") }
+    
+    // For SERIAL tracked products, we manage multiple physical units.
+    var unitDetails by remember { mutableStateOf(listOf(OpeningStockUnitEntry())) }
     
     val scope = rememberCoroutineScope()
     var suggestions by remember { mutableStateOf<List<ProductMaster>>(emptyList()) }
     var expanded by remember { mutableStateOf(false) }
+
+    val isSerialTracked = selectedProduct?.serialNumberRequired == true
+
+    // Synchronize unitDetails with quantity for SERIAL items
+    LaunchedEffect(quantity, isSerialTracked) {
+        if (isSerialTracked) {
+            val q = quantity.toIntOrNull() ?: 0
+            if (q > 0 && q <= 100) {
+                if (unitDetails.size < q) {
+                    unitDetails = unitDetails + List(q - unitDetails.size) { OpeningStockUnitEntry() }
+                } else if (unitDetails.size > q) {
+                    unitDetails = unitDetails.take(q)
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -94,6 +125,8 @@ fun AddOpeningStockItemScreen(
                                     productName = product.productName
                                     model = product.model
                                     category = product.category.name
+                                    rate = product.purchasePrice.toString()
+                                    gstPercent = product.gstPercent.toString()
                                     expanded = false
                                 }
                             )
@@ -125,61 +158,172 @@ fun AddOpeningStockItemScreen(
                         label = { Text("Power") },
                         modifier = Modifier.weight(1f)
                     )
-                    OutlinedTextField(
-                        value = batchSerial,
-                        onValueChange = { batchSerial = it },
-                        label = { 
-                            val label = if (selectedProduct?.serialNumberRequired == true) "Serial Number" else "Batch Number"
-                            Text(label) 
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
+                    if (!isSerialTracked) {
+                        OutlinedTextField(
+                            value = batchNumber,
+                            onValueChange = { batchNumber = it },
+                            label = { Text("Batch Number") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    } else {
+                        // For serial items, quantity field is primary.
+                        OutlinedTextField(
+                            value = quantity,
+                            onValueChange = { if (it.all { c -> c.isDigit() }) quantity = it },
+                            label = { Text("Quantity") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+                }
+
+                if (!isSerialTracked) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = quantity,
+                            onValueChange = { if (it.all { c -> c.isDigit() }) quantity = it },
+                            label = { Text("Quantity") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = expiryDate,
+                            onValueChange = { expiryDate = it },
+                            label = { Text("Expiry (MMYY)") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
-                        value = quantity,
-                        onValueChange = { if (it.all { c -> c.isDigit() }) quantity = it },
-                        label = { Text("Quantity") },
+                        value = rate,
+                        onValueChange = { if (it.isEmpty() || it.toDoubleOrNull() != null) rate = it },
+                        label = { Text("Rate (Excl. GST)") },
                         modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        readOnly = selectedProduct?.serialNumberRequired == true
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                     )
                     OutlinedTextField(
-                        value = expiryDate,
-                        onValueChange = { expiryDate = it },
-                        label = { Text("Expiry (MMYY)") },
-                        modifier = Modifier.weight(1f)
+                        value = gstPercent,
+                        onValueChange = { },
+                        label = { Text("GST %") },
+                        modifier = Modifier.weight(1f),
+                        readOnly = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color(0xFFF2F4F7),
+                            unfocusedContainerColor = Color(0xFFF2F4F7)
+                        )
                     )
                 }
 
-                OutlinedTextField(
-                    value = unitCost,
-                    onValueChange = { if (it.isEmpty() || it.toDoubleOrNull() != null) unitCost = it },
-                    label = { Text("Unit Cost") },
-                    modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                )
+                // =====================================================
+                // SERIAL DETAILS (MULTI-UNIT ENTRY)
+                // =====================================================
+                if (isSerialTracked && unitDetails.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "SERIAL DETAILS", 
+                        fontWeight = FontWeight.Bold, 
+                        fontSize = 12.sp, 
+                        color = Color(0xFF476EA8)
+                    )
+                    
+                    unitDetails.forEachIndexed { index, unit ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFF)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDE9FA))
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Unit ${index + 1}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = unit.rawSerial,
+                                        onValueChange = { value ->
+                                            val list = unitDetails.toMutableList()
+                                            val prefix = selectedProduct?.serialPrefix ?: ""
+                                            list[index] = unit.copy(
+                                                rawSerial = value,
+                                                serialNumber = SerialFormatter.format(prefix, value)
+                                            )
+                                            unitDetails = list
+                                        },
+                                        label = { Text("Serial No (Numeric)") },
+                                        modifier = Modifier.weight(1f),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        singleLine = true
+                                    )
+                                    
+                                    OutlinedTextField(
+                                        value = unit.expiryDate,
+                                        onValueChange = { value ->
+                                            val list = unitDetails.toMutableList()
+                                            list[index] = unit.copy(expiryDate = value)
+                                            unitDetails = list
+                                        },
+                                        label = { Text("EXP (MMYY)") },
+                                        modifier = Modifier.weight(0.7f),
+                                        singleLine = true
+                                    )
+                                }
+                                
+                                Text(
+                                    text = "Full Serial: ${unit.serialNumber.ifBlank { "—" }}",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF667085)
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Button(
                     onClick = {
                         val product = selectedProduct ?: return@Button
                         val qty = quantity.toIntOrNull() ?: 1
-                        val cost = unitCost.toDoubleOrNull() ?: 0.0
-                        onAddItem(
-                            OpeningStockUiItem(
-                                productId = product.id,
-                                productName = product.productName,
-                                model = product.model,
-                                power = power,
-                                batchNumber = batchSerial,
-                                expiryDate = expiryDate,
-                                quantity = qty,
-                                unitCost = cost,
-                                totalCost = qty * cost,
-                                trackingType = if (product.serialNumberRequired) "SERIAL" else "QUANTITY"
+                        val r = rate.toDoubleOrNull() ?: 0.0
+                        val g = gstPercent.toDoubleOrNull() ?: 0.0
+                        
+                        val items = if (isSerialTracked) {
+                            unitDetails.map { unit ->
+                                OpeningStockUiItem(
+                                    productId = product.id,
+                                    productName = product.productName,
+                                    model = product.model,
+                                    power = power,
+                                    batchNumber = "", // Primary identity is in serialNumber
+                                    rawSerial = unit.rawSerial,
+                                    serialNumber = unit.serialNumber,
+                                    expiryDate = unit.expiryDate,
+                                    quantity = 1,
+                                    unitCost = r,
+                                    gstPercent = g,
+                                    totalCost = money(1 * r * (1 + g / 100.0)),
+                                    trackingType = "SERIAL"
+                                )
+                            }
+                        } else {
+                            listOf(
+                                OpeningStockUiItem(
+                                    productId = product.id,
+                                    productName = product.productName,
+                                    model = product.model,
+                                    power = power,
+                                    batchNumber = batchNumber,
+                                    rawSerial = "",
+                                    serialNumber = "",
+                                    expiryDate = expiryDate,
+                                    quantity = qty,
+                                    unitCost = r,
+                                    gstPercent = g,
+                                    totalCost = money(qty * r * (1 + g / 100.0)),
+                                    trackingType = "QUANTITY"
+                                )
                             )
-                        )
+                        }
+                        
+                        onAddItem(items)
                     },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF476EA8)),
@@ -190,4 +334,8 @@ fun AddOpeningStockItemScreen(
             }
         }
     }
+}
+
+private fun money(value: Double): Double {
+    return round(value * 100.0) / 100.0
 }

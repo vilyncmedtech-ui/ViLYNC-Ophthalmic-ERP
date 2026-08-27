@@ -164,8 +164,10 @@ class PurchaseRepository(
         itemsWithLenses:
         List<Pair<PurchaseItemEntity, List<PurchaseLensEntity>>>
     ): Long {
+        android.util.Log.d("PURCHASE_SAVE_TRACE", "REPO: saveCompletePurchase() ENTERED. Items count=${itemsWithLenses.size}")
 
         return database.withTransaction {
+            android.util.Log.d("PURCHASE_SAVE_TRACE", "REPO: Room Transaction STARTED")
 
             // =================================================
             // STEP 1
@@ -178,203 +180,89 @@ class PurchaseRepository(
                     itemsWithLenses = itemsWithLenses
                 )
 
+            android.util.Log.d("PURCHASE_SAVE_TRACE", "REPO: DAO saveCompletePurchase result ID=$purchaseId")
 
             require(
                 purchaseId > 0L
             ) {
+                android.util.Log.e("PURCHASE_SAVE_TRACE", "REPO: require FAIL - purchaseId <= 0")
                 "Purchase could not be saved."
             }
 
 
             // =================================================
-            // STEP 2
-            // READ SAVED PURCHASE ITEMS
+            // STEP 2 & 3
+            // CREATE SERIAL-WISE INVENTORY (GATED BY STATUS)
             // =================================================
 
-            val savedItems =
-                purchaseDao
-                    .getPurchaseItems(
-                        purchaseId = purchaseId
-                    )
-                    .first()
-
-
-            // =================================================
-            // STEP 3
-            // CREATE SERIAL-WISE INVENTORY
-            // =================================================
-
-            savedItems.forEach { savedItem ->
-
-                val savedLenses =
+            if (purchase.status == "POSTED") {
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "REPO: Status is POSTED. Creating inventory units.")
+                
+                val savedItems =
                     purchaseDao
-                        .getPurchaseLenses(
-                            purchaseItemId =
-                                savedItem.id
+                        .getPurchaseItems(
+                            purchaseId = purchaseId
                         )
                         .first()
 
-
-                savedLenses.forEach { savedLens ->
-
-                    val serialNumber =
-                        savedLens
-                            .serialNumber
-                            .trim()
-
-
-                    require(
-                        serialNumber.isNotBlank()
-                    ) {
-                        "Serial number cannot be blank for serial-tracked inventory."
-                    }
-
-
-                    // =========================================
-                    // DUPLICATE INVENTORY SERIAL SAFETY
-                    // =========================================
-
-                    val inventorySerialExists =
-                        database
-                            .inventoryDao()
-                            .serialNumberExists(
-                                serialNumber =
-                                    serialNumber
+                savedItems.forEachIndexed { itemIndex, savedItem ->
+                    val savedLenses =
+                        purchaseDao
+                            .getPurchaseLenses(
+                                purchaseItemId = savedItem.id
                             )
+                            .first()
 
+                    savedLenses.forEachIndexed { lensIndex, savedLens ->
+                        val serialNumber = savedLens.serialNumber.trim()
 
-                    require(
-                        !inventorySerialExists
-                    ) {
-                        "Serial Number $serialNumber already exists in Inventory."
-                    }
+                        require(serialNumber.isNotBlank()) {
+                            "Serial number cannot be blank for serial-tracked inventory."
+                        }
 
+                        val inventorySerialExists = database.inventoryDao().serialNumberExists(serialNumber = serialNumber)
+                        require(!inventorySerialExists) {
+                            "Serial Number $serialNumber already exists in Inventory."
+                        }
 
-                    // =========================================
-                    // EXPIRY
-                    // =========================================
+                        val finalExpiryDate = savedLens.expiryDate.trim().ifBlank { savedItem.expiryDate.trim() }
 
-                    val finalExpiryDate =
-                        savedLens
-                            .expiryDate
-                            .trim()
-                            .ifBlank {
-
-                                savedItem
-                                    .expiryDate
-                                    .trim()
-                            }
-
-
-                    // =========================================
-                    // CREATE INVENTORY UNIT
-                    // =========================================
-
-                    val inventoryUnitId =
-                        database
-                            .inventoryDao()
-                            .insertInventoryUnit(
-
-                                InventoryUnitEntity(
-
-                                    productId =
-                                        savedItem.productId,
-
-                                    power =
-                                        savedItem
-                                            .power
-                                            .trim(),
-
-                                    serialNumber =
-                                        serialNumber,
-
-                                    batchNumber =
-                                        savedItem
-                                            .batchNumber
-                                            .trim(),
-
-                                    expiryDate =
-                                        finalExpiryDate,
-
-                                    receivedDate =
-                                        purchase
-                                            .receivedDate
-                                            .trim(),
-
-                                    supplierName =
-                                        purchase
-                                        .supplierName
-                                        .trim(),
-
-                                    purchaseInvoiceNumber =
-                                        purchase
-                                        .invoiceNumber
-                                        .trim(),
-
-                                    purchaseId = purchaseId,
-                                    purchaseItemId = savedItem.id,
-
-                                    status =
-                                        "IN_STOCK"
-                                )
-                            )
-
-
-                    require(
-                        inventoryUnitId > 0L
-                    ) {
-                        "Inventory unit could not be created for Serial Number $serialNumber."
-                    }
-
-
-                    // =========================================
-                    // CREATE PURCHASE RECEIVED MOVEMENT
-                    // =========================================
-
-                    database
-                        .stockMovementDao()
-                        .insertMovement(
-
-                            StockMovementEntity(
-
-                                inventoryUnitId =
-                                    inventoryUnitId,
-
-                                serialNumber =
-                                    serialNumber,
-
-                                movementType =
-                                    "PURCHASE_RECEIVED",
-
-                                fromStatus =
-                                    "",
-
-                                toStatus =
-                                    "IN_STOCK",
-
-                                partyName =
-                                    purchase
-                                        .supplierName
-                                        .trim(),
-
-                                referenceNumber =
-                                    purchase
-                                        .invoiceNumber
-                                        .trim(),
-
-                                movementDate =
-                                    purchase
-                                        .receivedDate
-                                        .trim(),
-
-                                remarks =
-                                    "Stock received through Purchase Invoice ${purchase.invoiceNumber.trim()}"
+                        val inventoryUnitId = database.inventoryDao().insertInventoryUnit(
+                            InventoryUnitEntity(
+                                productId = savedItem.productId,
+                                power = savedItem.power.trim(),
+                                serialNumber = serialNumber,
+                                batchNumber = savedItem.batchNumber.trim(),
+                                expiryDate = finalExpiryDate,
+                                receivedDate = purchase.receivedDate.trim(),
+                                supplierName = purchase.supplierName.trim(),
+                                purchaseInvoiceNumber = purchase.invoiceNumber.trim(),
+                                purchaseId = purchaseId,
+                                purchaseItemId = savedItem.id,
+                                status = "IN_STOCK"
                             )
                         )
+
+                        database.stockMovementDao().insertMovement(
+                            StockMovementEntity(
+                                inventoryUnitId = inventoryUnitId,
+                                serialNumber = serialNumber,
+                                movementType = "PURCHASE_RECEIVED",
+                                fromStatus = "",
+                                toStatus = "IN_STOCK",
+                                partyName = purchase.supplierName.trim(),
+                                referenceNumber = purchase.invoiceNumber.trim(),
+                                movementDate = purchase.receivedDate.trim(),
+                                remarks = "Stock received through Purchase Invoice ${purchase.invoiceNumber.trim()}"
+                            )
+                        )
+                    }
                 }
+            } else {
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "REPO: Status is ${purchase.status}. Skipping inventory creation.")
             }
 
-
+            android.util.Log.d("PURCHASE_SAVE_TRACE", "REPO: Transaction SUCCESS. Returning purchaseId=$purchaseId")
             purchaseId
         }
     }
@@ -415,6 +303,14 @@ class PurchaseRepository(
 
 
         database.withTransaction {
+
+            if (purchase.status != "POSTED") {
+                purchaseDao.updateCompletePurchase(
+                    purchase = purchase,
+                    itemsWithLenses = itemsWithLenses
+                )
+                return@withTransaction
+            }
 
             val inventoryDao =
                 database.inventoryDao()
@@ -875,6 +771,15 @@ class PurchaseRepository(
         purchaseDao.getPurchasesByFinancialYear(
             financialYearStart =
                 financialYearStart
+        )
+
+    fun getPurchasesByStatusAndFy(
+        status: String,
+        financialYearStart: Int
+    ): Flow<List<PurchaseEntity>> =
+        purchaseDao.getPurchasesByStatusAndFy(
+            status = status,
+            financialYearStart = financialYearStart
         )
 
 

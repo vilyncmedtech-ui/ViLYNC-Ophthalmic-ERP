@@ -90,7 +90,7 @@ fun PaymentEntryScreen(
                         value = partyQuery,
                         onValueChange = { 
                             partyQuery = it
-                            viewModel.searchParty(it)
+                            viewModel.searchParty(it, type)
                             expanded = true
                         },
                         label = { Text(if (type == "RECEIPT") "Search Customer" else "Search Supplier") },

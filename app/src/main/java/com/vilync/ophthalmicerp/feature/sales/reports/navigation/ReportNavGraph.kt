@@ -18,6 +18,7 @@ import com.vilync.ophthalmicerp.core.reports.presentation.UniversalReportScreen
 import com.vilync.ophthalmicerp.core.reports.presentation.UniversalReportViewModel
 import com.vilync.ophthalmicerp.data.repository.InventoryRepository
 import com.vilync.ophthalmicerp.data.repository.ProductRepository
+import com.vilync.ophthalmicerp.data.repository.SalesRepository
 import com.vilync.ophthalmicerp.data.repository.InventoryStockRepository
 import com.vilync.ophthalmicerp.feature.inventory.logic.GetAvailableStockUseCase
 import com.vilync.ophthalmicerp.feature.inventory.ageing.InventoryAgeingUseCase
@@ -35,10 +36,20 @@ import com.vilync.ophthalmicerp.feature.payment.presentation.FinancialReportView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vilync.ophthalmicerp.data.repository.AccountRepository
 import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
+import com.vilync.ophthalmicerp.feature.sales.reports.data.LensLibraryReportProvider
+import com.vilync.ophthalmicerp.feature.sales.invoicehub.presentation.InvoiceHubScreen
+import com.vilync.ophthalmicerp.feature.sales.invoicehub.presentation.InvoiceHubViewModel
+import com.vilync.ophthalmicerp.feature.sales.invoicehub.presentation.InvoiceHubViewModelFactory
+import com.vilync.ophthalmicerp.feature.financialstatements.data.FinancialStatementRepository
+import com.vilync.ophthalmicerp.feature.financialstatements.domain.FinancialStatementUseCase
+import com.vilync.ophthalmicerp.feature.financialstatements.presentation.FinancialStatementsScreen
+import com.vilync.ophthalmicerp.feature.financialstatements.presentation.FinancialStatementsViewModel
+import com.vilync.ophthalmicerp.feature.financialstatements.presentation.FinancialStatementsViewModelFactory
 
 fun NavGraphBuilder.salesReportsGraph(
     navController: NavController,
-    database: AppDatabase
+    database: AppDatabase,
+    lowStockUseCase: LowStockAlertUseCase
 ) {
     composable(route = "reports_home") {
         ReportsHomeScreen(
@@ -49,33 +60,74 @@ fun NavGraphBuilder.salesReportsGraph(
             onStockReportsClick = { /* TODO */ },
             onInventoryMovementReportClick = { navController.navigate("sales_report/inventory_movement") },
             onInventoryAgeingReportClick = { navController.navigate("sales_report/inventory_ageing") },
-            onLowStockAlertClick = { navController.navigate("sales_report/low_stock_alert") },
-            onGstReportsClick = { /* TODO */ },
+            onLowStockAlertClick = { navController.navigate("low_stock_status") },
+            onGstReportsClick = { navController.navigate("gst_home") },
             onCustomerLedgerClick = { navController.navigate("financial_report/customer_ledger") },
             onSupplierLedgerClick = { navController.navigate("financial_report/supplier_ledger") },
             onCashBookClick = { navController.navigate("financial_report/cash_book") },
-            onBankBookClick = { navController.navigate("financial_report/bank_book") }
+            onBankBookClick = { navController.navigate("financial_report/bank_book") },
+            onFinancialStatementsClick = { navController.navigate("financial_statements") },
+            onLensLibraryStatusReportClick = { navController.navigate("sales_report/lens_library_status") },
+            onBulkInvoiceHubClick = { navController.navigate("invoice_hub") }
+        )
+    }
+
+    composable(route = "financial_statements") {
+        val repository = remember { FinancialStatementRepository(database) }
+        val useCase = remember { FinancialStatementUseCase(repository) }
+        val financialViewModel: FinancialStatementsViewModel = viewModel(
+            factory = FinancialStatementsViewModelFactory(useCase)
+        )
+        
+        FinancialStatementsScreen(
+            viewModel = financialViewModel,
+            onBack = { navController.popBackStack() },
+            onDashboard = { navController.navigate("dashboard") },
+            onDrillDown = { type, id ->
+                navController.navigate("financial_report/$type?partyId=$id")
+            }
+        )
+    }
+
+    composable(route = "invoice_hub") {
+        val auditTrailRepository = remember { com.vilync.ophthalmicerp.data.repository.AuditTrailRepository(database.auditTrailDao()) }
+        val salesRepository = remember { SalesRepository(database.salesDao(), database, auditTrailRepository, null) }
+        val productRepository = remember { ProductRepository(database.productDao()) }
+        val partyRepository = remember { PartyRepository(database.partyDao()) }
+        val companyProfileDao = remember { database.companyProfileDao() }
+        
+        val hubViewModel: InvoiceHubViewModel = viewModel(
+            factory = InvoiceHubViewModelFactory(salesRepository, productRepository, partyRepository, companyProfileDao)
+        )
+        
+        InvoiceHubScreen(
+            viewModel = hubViewModel,
+            onBack = { navController.popBackStack() }
         )
     }
 
     composable(
-        route = "financial_report/{reportId}",
-        arguments = listOf(navArgument("reportId") { type = NavType.StringType })
+        route = "financial_report/{reportId}?partyId={partyId}",
+        arguments = listOf(
+            navArgument("reportId") { type = NavType.StringType },
+            navArgument("partyId") { type = NavType.LongType; defaultValue = 0L }
+        )
     ) { backStackEntry ->
         val reportId = backStackEntry.arguments?.getString("reportId")
-        
+        val partyId = backStackEntry.arguments?.getLong("partyId") ?: 0L
+        val partyRepository = remember { PartyRepository(database.partyDao()) }
+        val accountRepository = remember { AccountRepository(database.accountDao()) }
+
         val reportingUseCase = remember {
             FinancialReportingUseCase(
                 salesDao = database.salesDao(),
                 purchaseDao = database.purchaseDao(),
                 salesCreditNoteDao = database.salesCreditNoteDao(),
                 purchaseReturnDao = database.purchaseReturnDao(),
-                financialTransactionDao = database.financialTransactionDao()
+                financialTransactionDao = database.financialTransactionDao(),
+                partyRepository = partyRepository
             )
         }
-        
-        val partyRepository = remember { PartyRepository(database.partyDao()) }
-        val accountRepository = remember { AccountRepository(database.accountDao()) }
         
         val schema = when (reportId) {
             "customer_ledger" -> FinancialReportSchemas.CustomerLedgerSchema
@@ -86,12 +138,13 @@ fun NavGraphBuilder.salesReportsGraph(
         }
         
         val financialViewModel: FinancialReportViewModel = viewModel(
-            key = "financial_report_$reportId",
+            key = "financial_report_${reportId}_$partyId",
             factory = FinancialReportViewModelFactory(
                 schema = schema,
                 reportingUseCase = reportingUseCase,
                 partyRepository = partyRepository,
-                accountRepository = accountRepository
+                accountRepository = accountRepository,
+                initialPartyId = partyId
             )
         )
         
@@ -115,11 +168,8 @@ fun NavGraphBuilder.salesReportsGraph(
         
         val inventoryRepository = remember { InventoryRepository(database.inventoryDao()) }
         val salesProductRepository = remember { ProductRepository(database.productDao()) }
-        val ageingUseCase = remember { InventoryAgeingUseCase(inventoryRepository, salesProductRepository) }
-        
-        val inventoryStockRepository = remember { InventoryStockRepository(database.inventoryStockDao(), database.productDao()) }
-        val stockEngine = remember { GetAvailableStockUseCase(inventoryStockRepository) }
-        val lowStockUseCase = remember { LowStockAlertUseCase(stockEngine) }
+        val partyRepository = remember { PartyRepository(database.partyDao()) }
+        val ageingUseCase = remember { InventoryAgeingUseCase(inventoryRepository, salesProductRepository, partyRepository) }
         
         // Observe master data for dropdowns with stable flows to prevent stale lambda captures
         val productsState = remember(database) { 
@@ -130,14 +180,20 @@ fun NavGraphBuilder.salesReportsGraph(
             database.partyDao().getAllActiveParties()
         }.collectAsState(initial = emptyList())
 
+        val libraryPartiesState = remember(database) {
+            database.challanDao().getPartiesWithLibraryChallans()
+        }.collectAsState(initial = emptyList())
+
         val products = productsState.value
         val parties = partiesState.value
+        val libraryParties = libraryPartiesState.value
         
         val schema = when (reportId) {
             "product_wise_sales" -> ReportSchemas.ProductWiseSalesSchema
             "inventory_movement" -> ReportSchemas.InventoryMovementSchema
             "inventory_ageing" -> ReportSchemas.InventoryAgeingSchema
             "low_stock_alert" -> ReportSchemas.LowStockAlertSchema
+            "lens_library_status" -> ReportSchemas.LensLibraryStatusSchema
             else -> ReportSchemas.SalesTransactionSchema
         }
 
@@ -153,7 +209,9 @@ fun NavGraphBuilder.salesReportsGraph(
                     val end = filters["date_to"]?.toString()?.takeIf { it.isNotBlank() } ?: "2026-07-31"
                     val searchQuery = filters["search"] as? String ?: ""
                     
-                    if (schema.id == "low_stock_alert") {
+                    if (schema.id == "lens_library_status") {
+                        LensLibraryReportProvider.provideData(database, filters)
+                    } else if (schema.id == "low_stock_alert") {
                         lowStockUseCase.getAlerts(filters)
                     } else if (schema.id == "inventory_ageing") {
                         ageingUseCase.getAgeingReport(filters)
@@ -163,12 +221,8 @@ fun NavGraphBuilder.salesReportsGraph(
                         val custIdStr = filters["customer"]?.toString() ?: "0"
                         val custId = custIdStr.toLongOrNull()?.let { if (it == 0L) null else it }
                         
-                        val selectedProductName = filters["product"]?.toString() ?: "All Products"
-                        val prodId = if (selectedProductName == "All Products") null else {
-                            productsState.value.find { 
-                                it.productName.replace(Regex("^\\d+\\s+"), "").trim() == selectedProductName 
-                            }?.id
-                        }
+                        val productFilterId = filters["product"]?.toString() ?: "0"
+                        val prodId = if (productFilterId == "0") null else productFilterId.toLongOrNull()
 
                         val txType = filters["transaction_type"]?.toString() ?: "All"
 
@@ -194,8 +248,10 @@ fun NavGraphBuilder.salesReportsGraph(
                     } else {
                         // Sales Transaction logic
                         val txType = filters["transaction_type"] as? String ?: "Sales Invoice"
-                        val productFilter = filters["product"] as? String ?: "All Products"
-                        val customerFilter = filters["customer"] as? String ?: "All Customers"
+                        
+                        val productFilterId = filters["product"]?.toString() ?: "0"
+                        val customerFilterId = filters["customer"]?.toString() ?: "0"
+                        
                         val details = useCase.getSalesDetails(start, end)
 
                         val filtered = details.filter { detail ->
@@ -210,8 +266,8 @@ fun NavGraphBuilder.salesReportsGraph(
                                 else -> false
                             }
 
-                            val matchesProduct = productFilter == "All Products" || detail.product == productFilter
-                            val matchesCustomer = customerFilter == "All Customers" || detail.customer == customerFilter
+                            val matchesProduct = productFilterId == "0" || detail.productId.toString() == productFilterId
+                            val matchesCustomer = customerFilterId == "0" || detail.customerId.toString() == customerFilterId
 
                             matchesSearch && matchesTxType && matchesProduct && matchesCustomer
                         }
@@ -246,21 +302,20 @@ fun NavGraphBuilder.salesReportsGraph(
                     }
                 },
                 summaryCalculator = { rows ->
-                    if (schema.id == "low_stock_alert") {
+                    if (schema.id == "lens_library_status") {
+                        LensLibraryReportProvider.calculateSummary(rows)
+                    } else if (schema.id == "low_stock_alert") {
                         lowStockUseCase.calculateSummary(rows)
                     } else if (schema.id == "inventory_ageing") {
-                        val fresh = rows.count { it.values["bucket"] == InventoryAgeingUseCase.BUCKET_0_30 }
-                        val slow = rows.count { 
-                            val bucket = it.values["bucket"]
-                            bucket == InventoryAgeingUseCase.BUCKET_91_180 
-                        }
-                        val dead = rows.count { it.values["bucket"] == InventoryAgeingUseCase.BUCKET_181_PLUS }
+                        val fresh = rows.count { it.values["expiryStatus"] == InventoryAgeingUseCase.RISK_FRESH }
+                        val highRisk = rows.count { it.values["expiryStatus"] == InventoryAgeingUseCase.RISK_HIGH_RISK }
+                        val expired = rows.count { it.values["expiryStatus"] == InventoryAgeingUseCase.RISK_EXPIRED }
                         
                         mapOf(
                             "total_stock" to rows.size.toString(),
                             "fresh_stock" to fresh.toString(),
-                            "slow_moving" to slow.toString(),
-                            "dead_stock" to dead.toString()
+                            "high_risk" to highRisk.toString(),
+                            "expired" to expired.toString()
                         )
                     } else if (schema.id == "inventory_movement") {
                         val totalIn = rows.sumOf { it.values["qtyIn"]?.toString()?.toIntOrNull() ?: 0 }
@@ -298,24 +353,35 @@ fun NavGraphBuilder.salesReportsGraph(
             )
         }
 
-        LaunchedEffect(reportId, products, parties) {
-            // Logic to strip "01 ", "02 " etc prefixes from product names for UI
-            val productNames = products.map { 
-                it.productName.replace(Regex("^\\d+\\s+"), "").trim() 
+        LaunchedEffect(reportId, products, parties, libraryParties) {
+            // Options format: "ID|Name|Subtext"
+            
+            val productOptions = products.map { 
+                val cleanName = it.productName.replace(Regex("^\\d+\\s+"), "").trim()
+                "${it.id}|$cleanName|${it.brandName}" 
             }
             
             val categories = products.map { it.category }.distinct().sorted()
             val manufacturers = products.map { it.brandName }.filter { it.isNotBlank() }.distinct().sorted()
             
-            val customerOptions = parties
+            val effectiveParties = if (reportId == "lens_library_status") libraryParties else parties
+
+            val customerOptions = effectiveParties
                 .filter { it.partyType == "CUSTOMER" || it.partyType == "HOSPITAL" }
                 .map { "${it.id}|${it.partyName}|${it.gstin}" }
+            
+            val vendorOptions = effectiveParties
+                .filter { it.partyType == "SUPPLIER" || it.partyType == "MANUFACTURER" }
+                .map { "${it.id}|${it.partyName}|${it.gstin}" }
+            
+            val distinctPowers = inventoryRepository.getDistinctPowers()
 
-            universalViewModel.setDynamicOptions("product", listOf("All Products") + productNames)
+            universalViewModel.setDynamicOptions("product", listOf("0|All Products") + productOptions)
             universalViewModel.setDynamicOptions("category", listOf("All Categories") + categories)
             universalViewModel.setDynamicOptions("company", listOf("All Companies") + manufacturers)
             universalViewModel.setDynamicOptions("customer", listOf("0|All Customers") + customerOptions)
-            universalViewModel.setDynamicOptions("vendor", listOf("0|All Vendors") + customerOptions) // Reusing parties for vendors for now
+            universalViewModel.setDynamicOptions("vendor", listOf("0|All Vendors") + vendorOptions)
+            universalViewModel.setDynamicOptions("power", listOf("All") + distinctPowers)
         }
 
         UniversalReportScreen(

@@ -1,6 +1,7 @@
 package com.vilync.ophthalmicerp.data.repository
 
 import com.vilync.ophthalmicerp.data.dao.FinancialTransactionDao
+import com.vilync.ophthalmicerp.data.dao.FinancialTransactionRow
 import com.vilync.ophthalmicerp.data.entity.FinancialTransactionEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -18,6 +19,10 @@ class FinancialTransactionRepository(
 
     fun getAllTransactions(): Flow<List<FinancialTransactionEntity>> {
         return financialTransactionDao.getAllTransactions()
+    }
+
+    fun getAllTransactionRows(): Flow<List<FinancialTransactionRow>> {
+        return financialTransactionDao.getAllTransactionRows()
     }
 
     suspend fun getTransactionById(id: Long): FinancialTransactionEntity? {

@@ -4,7 +4,7 @@ import com.vilync.ophthalmicerp.core.document.engine.BindingValue
 import com.vilync.ophthalmicerp.core.document.engine.DocumentBindingContext
 import com.vilync.ophthalmicerp.core.document.engine.DynamicFieldProvider
 import com.vilync.ophthalmicerp.data.repository.SalesRepository
-import com.vilync.ophthalmicerp.feature.designer.domain.model.DesignerDocumentType
+import com.vilync.ophthalmicerp.core.document.domain.DesignerDocumentType
 import kotlinx.coroutines.flow.first
 
 /**

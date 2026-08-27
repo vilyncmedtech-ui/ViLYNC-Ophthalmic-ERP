@@ -177,6 +177,18 @@ interface SampleIssueDao {
 
     @Query(
         """
+        SELECT COUNT(*)
+        FROM sample_issue_items
+        WHERE sampleIssueId = :sampleIssueId
+          AND settlementStatus = 'EVALUATED'
+        """
+    )
+    suspend fun getEvaluatedItemCount(
+        sampleIssueId: Long
+    ): Int
+
+    @Query(
+        """
         UPDATE sample_issues
         SET status = :status,
             updatedAt = :updatedAt
@@ -227,4 +239,33 @@ interface SampleIssueDao {
         normalizedSampleIssueNumber: String,
         financialYearStart: Int
     ): Boolean
+    @Query(
+        """
+        UPDATE sample_issue_items
+        SET settlementStatus = :status,
+            updatedAt = :updatedAt
+        WHERE id = :sampleIssueItemId
+        """
+    )
+    suspend fun updateSampleIssueItemSettlementStatus(
+        sampleIssueItemId: Long,
+        status: String,
+        updatedAt: Long
+    )
+    @Query(
+        """
+        SELECT i.*
+        FROM sample_issue_items i
+        INNER JOIN sample_issues s ON s.id = i.sampleIssueId
+        WHERE s.customerId = :customerId
+          AND i.settlementStatus = 'EVALUATED'
+          AND s.status != 'CANCELLED'
+          AND UPPER(TRIM(i.serialNumber)) LIKE '%' || UPPER(TRIM(:query))
+        ORDER BY i.serialNumber COLLATE NOCASE ASC
+        """
+    )
+    suspend fun findEvaluatedSampleItemsForCustomer(
+        customerId: Long,
+        query: String
+    ): List<SampleIssueItemEntity>
 }

@@ -1,12 +1,16 @@
 package com.vilync.ophthalmicerp.data.repository
 
+import androidx.room.withTransaction
+import com.vilync.ophthalmicerp.core.util.SerialFormatter
 import com.vilync.ophthalmicerp.data.dao.InventoryDao
+import com.vilync.ophthalmicerp.data.database.AppDatabase
 import com.vilync.ophthalmicerp.data.entity.InventoryUnitEntity
 import kotlinx.coroutines.flow.Flow
 
 
 class InventoryRepository(
-    private val inventoryDao: InventoryDao
+    private val inventoryDao: InventoryDao,
+    private val database: AppDatabase? = null
 ) {
 
     // =========================================================
@@ -286,6 +290,59 @@ class InventoryRepository(
         return inventoryDao.getById(
             unitId
         )
+    }
+
+
+    // =========================================================
+    // DISTINCT POWERS
+    // =========================================================
+
+    suspend fun getDistinctPowers(): List<String> {
+        return inventoryDao.getDistinctPowers()
+    }
+
+    suspend fun getAvailableUnitsByProductAndPower(
+        productId: Long,
+        power: String
+    ): List<InventoryUnitEntity> {
+        return inventoryDao.getAvailableUnitsByProductAndPower(productId, power)
+    }
+
+    /**
+     * Finds an inventory unit by serial number, attempting to match
+     * regardless of whether the "LMDE" prefix is stored in the database.
+     */
+    suspend fun getUnitBySerialAgnostic(input: String): InventoryUnitEntity? {
+        val trimmed = input.trim()
+        
+        // 1. Try exact match (handles LMDE prefix if stored, or raw if entered raw)
+        val exact = inventoryDao.getBySerialNumber(trimmed)
+        if (exact != null) return exact
+        
+        // 2. Try with LMDE prefix if input is numeric
+        if (trimmed.all { it.isDigit() }) {
+            val prefixed = SerialFormatter.format("LMDE", trimmed)
+            val unit = inventoryDao.getBySerialNumber(prefixed)
+            if (unit != null) return unit
+        }
+        
+        // 3. Try raw numeric if input has LMDE prefix
+        if (trimmed.startsWith("LMDE", ignoreCase = true)) {
+            val raw = trimmed.substring(4)
+            val unit = inventoryDao.getBySerialNumber(raw)
+            if (unit != null) return unit
+        }
+        
+        return null
+    }
+
+
+    suspend fun <R> withTransaction(block: suspend () -> R): R {
+        return if (database != null) {
+            database.withTransaction(block)
+        } else {
+            block()
+        }
     }
 
 

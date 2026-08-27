@@ -12,8 +12,9 @@ class SalesRegisterRepository(
     fun getRegisterRows(type: SalesRegisterType): Flow<List<SalesRegisterRow>> {
         return when (type) {
             SalesRegisterType.INVOICE -> {
-                database.salesDao().getAllSales().map { sales ->
-                    sales.map { sale ->
+                database.salesDao().getAllSalesWithCreditNote().map { rows ->
+                    rows.map { row ->
+                        val sale = row.sale
                         SalesRegisterRow(
                             id = sale.id,
                             documentNumber = sale.invoiceNumber,
@@ -23,6 +24,7 @@ class SalesRegisterRepository(
                             status = sale.status,
                             amount = sale.totalAmount,
                             secondaryInfo = sale.remarks,
+                            creditNoteNumber = row.creditNoteNumber,
                             financialYearStart = sale.financialYearStart
                         )
                     }

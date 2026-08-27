@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.sp
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.vilync.ophthalmicerp.feature.backup.model.GoogleAuthState
 import com.vilync.ophthalmicerp.feature.backup.presentation.GoogleBackupUiState
 import com.vilync.ophthalmicerp.feature.backup.presentation.GoogleBackupViewModel
@@ -39,6 +41,24 @@ fun BackupRestoreScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val recoveryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            // Retry initialization after recovery
+            (uiState.authState as? GoogleAuthState.Authenticated)?.let {
+                viewModel.loadCloudBackups() // This will re-trigger init logic if needed
+            }
+        }
+    }
+
+    LaunchedEffect(uiState.pendingIntent) {
+        uiState.pendingIntent?.let { intent ->
+            recoveryLauncher.launch(intent)
+            viewModel.consumePendingIntent()
+        }
+    }
 
     LaunchedEffect(uiState.statusMessage) {
         uiState.statusMessage?.let {
@@ -58,14 +78,12 @@ fun BackupRestoreScreen(
         )
     }
 
-    if (uiState.restoreSummary != null) {
+    if (uiState.restoreSummary != null && uiState.selectedBackupForRestore != null) {
         RestoreSummaryDialog(
             summary = uiState.restoreSummary!!,
             onConfirm = {
-                uiState.cloudBackups.find { it.driveFileId != null }?.let {
-                    viewModel.executeRestore(it) {
-                        exitProcess(0)
-                    }
+                viewModel.executeRestore(uiState.selectedBackupForRestore!!) {
+                    exitProcess(0)
                 }
             },
             onDismiss = { viewModel.dismissSummary() }
@@ -109,7 +127,7 @@ fun BackupRestoreScreen(
             if (uiState.authState is GoogleAuthState.Authenticated) {
                 CloudBackupsSection(
                     backups = uiState.cloudBackups,
-                    onRestoreClick = { viewModel.prepareRestore(it) }
+                    onRestoreClick = { backup -> viewModel.prepareRestore(backup) }
                 )
             }
 
@@ -136,7 +154,7 @@ fun BackupRestoreScreen(
 @Composable
 private fun CloudBackupsSection(
     backups: List<com.vilync.ophthalmicerp.feature.backup.data.BackupMetadataEntity>,
-    onRestoreClick: (String) -> Unit
+    onRestoreClick: (com.vilync.ophthalmicerp.feature.backup.data.BackupMetadataEntity) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -167,7 +185,7 @@ private fun CloudBackupsSection(
                             Text(text = formatTime(backup.timestamp), fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Text(text = "Size: ${formatFileSize(backup.fileSize)} • DB v${backup.dbVersion}", fontSize = 11.sp, color = Color.Gray)
                         }
-                        TextButton(onClick = { backup.driveFileId?.let { onRestoreClick(it) } }) {
+                        TextButton(onClick = { onRestoreClick(backup) }) {
                             Text("RESTORE")
                         }
                     }

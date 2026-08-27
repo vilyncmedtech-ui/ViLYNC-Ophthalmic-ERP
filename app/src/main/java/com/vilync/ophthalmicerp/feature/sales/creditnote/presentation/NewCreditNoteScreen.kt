@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.vilync.ophthalmicerp.feature.sales.register.SalesRegisterType
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -45,6 +46,7 @@ fun NewCreditNoteScreen(
 ) {
     val state = viewModel.uiState.collectAsState().value
     val money = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+    val isEditMode = state.editingId != null
 
     androidx.compose.runtime.LaunchedEffect(state.savedCreditNoteId) {
         if (state.savedCreditNoteId != null) {
@@ -59,7 +61,12 @@ fun NewCreditNoteScreen(
     ) {
         Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             OutlinedButton(onClick = onBack) { Text("← Back") }
-            Text("New Credit Note", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Navy)
+            Text(
+                text = if (isEditMode) "Edit Credit Note" else "New Credit Note",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = Navy
+            )
             OutlinedButton(onClick = onOpenRegister) { Text("Credit Note Register") }
         }
 
@@ -75,9 +82,11 @@ fun NewCreditNoteScreen(
                     onValueChange = viewModel::updateInvoiceQuery,
                     label = { Text("Search Invoice No. / Customer / Date") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    readOnly = isEditMode,
+                    enabled = !isEditMode
                 )
-                if (state.selectedInvoice == null || state.invoices.isNotEmpty()) {
+                if (!isEditMode && (state.selectedInvoice == null || state.invoices.isNotEmpty())) {
                     state.invoices.take(8).forEach { sale ->
                         Card(
                             modifier = Modifier.fillMaxWidth().clickable { viewModel.selectInvoice(sale) },
@@ -100,7 +109,9 @@ fun NewCreditNoteScreen(
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
-                value = "Auto-generated",
+                value = state.creditNoteNumber.ifBlank { 
+                    if (state.selectedInvoice == null) "Assigning on selection..." else "Auto-assigning..."
+                },
                 onValueChange = {},
                 readOnly = true,
                 label = { Text("Credit Note Number") },
@@ -121,12 +132,14 @@ fun NewCreditNoteScreen(
             FilterChip(
                 selected = state.creditNoteType == "SALES_RETURN",
                 onClick = { viewModel.setCreditNoteType("SALES_RETURN") },
-                label = { Text("Sales Return") }
+                label = { Text("Sales Return") },
+                enabled = !isEditMode // Prevent changing type in edit mode to avoid data inconsistency
             )
             FilterChip(
                 selected = state.creditNoteType == "FINANCIAL_ADJUSTMENT",
                 onClick = { viewModel.setCreditNoteType("FINANCIAL_ADJUSTMENT") },
-                label = { Text("Financial Adjustment") }
+                label = { Text("Financial Adjustment") },
+                enabled = !isEditMode
             )
         }
 
@@ -193,7 +206,8 @@ fun NewCreditNoteScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Navy)
         ) {
-            if (state.isSaving) CircularProgressIndicator() else Text("SAVE CREDIT NOTE")
+            if (state.isSaving) CircularProgressIndicator() 
+            else Text(if (isEditMode) "UPDATE CREDIT NOTE" else "SAVE CREDIT NOTE")
         }
     }
 }

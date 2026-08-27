@@ -8,6 +8,7 @@ import com.vilync.ophthalmicerp.data.repository.AccountRepository
 import com.vilync.ophthalmicerp.data.repository.FinancialTransactionRepository
 import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
 import com.vilync.ophthalmicerp.feature.master.party.model.PartyMaster
+import com.vilync.ophthalmicerp.feature.master.party.model.PartyType
 import com.vilync.ophthalmicerp.feature.payment.logic.PaymentUseCase
 import com.vilync.ophthalmicerp.data.repository.SalesRepository
 import com.vilync.ophthalmicerp.data.repository.PurchaseRepository
@@ -136,9 +137,15 @@ class PaymentViewModel(
         }
     }
 
-    fun searchParty(query: String) {
-        val filtered = _uiState.value.parties.filter { 
-            it.partyName.contains(query, ignoreCase = true) 
+    fun searchParty(query: String, type: String) {
+        val filtered = _uiState.value.parties.filter { party ->
+            val matchesQuery = party.partyName.contains(query, ignoreCase = true)
+            val matchesType = if (type == "RECEIPT") {
+                party.partyType == PartyType.CUSTOMER
+            } else {
+                party.partyType == PartyType.VENDOR || party.partyType == PartyType.BOTH
+            }
+            matchesQuery && matchesType
         }
         _uiState.update { it.copy(filteredParties = filtered) }
     }
@@ -207,11 +214,11 @@ class PaymentViewModel(
         }
     }
 
-    fun loadDraft(id: Long) {
+    fun loadForEdit(id: Long) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, isEditMode = true) }
             val tx = financialTransactionRepository.getTransactionById(id)
-            if (tx != null && tx.status == "DRAFT") {
+            if (tx != null && (tx.status == "DRAFT" || tx.status == "POSTED")) {
                 val party = partyRepository.getPartyById(tx.partyId)
                 _uiState.update { 
                     it.copy(

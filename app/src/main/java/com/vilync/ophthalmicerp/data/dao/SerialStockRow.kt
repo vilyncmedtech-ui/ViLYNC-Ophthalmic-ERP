@@ -38,6 +38,8 @@ data class SerialStockRow(
 
     val category: String,
 
+    val serialPrefix: String,
+
 
     // =========================================================
     // PHYSICAL UNIT

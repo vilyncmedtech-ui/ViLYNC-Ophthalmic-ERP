@@ -211,6 +211,29 @@ interface InventoryDao {
             Flow<List<InventoryUnitEntity>>
 
 
+    @Query(
+        """
+        SELECT DISTINCT power FROM inventory_units
+        WHERE status = 'IN_STOCK' AND power != ''
+        ORDER BY power ASC
+        """
+    )
+    suspend fun getDistinctPowers(): List<String>
+
+
+    @Query(
+        """
+        SELECT * FROM inventory_units
+        WHERE productId = :productId AND power = :power AND status = 'IN_STOCK'
+        ORDER BY serialNumber ASC
+        """
+    )
+    suspend fun getAvailableUnitsByProductAndPower(
+        productId: Long,
+        power: String
+    ): List<InventoryUnitEntity>
+
+
     // =========================================================
     // UNITS BY STATUS
     // =========================================================
@@ -242,17 +265,6 @@ interface InventoryDao {
         unitId: Long,
         newStatus: String
     )
-
-
-    @Query(
-        """
-        SELECT COUNT(*) FROM inventory_units
-        WHERE status = 'IN_STOCK'
-          AND expiryDate != ''
-          AND (substr(expiryDate, 7, 4) || '-' || substr(expiryDate, 4, 2) || '-' || substr(expiryDate, 1, 2)) <= :thresholdDate
-        """
-    )
-    suspend fun getExpiringSoonCount(thresholdDate: String): Int
 
 
     // =========================================================

@@ -14,6 +14,7 @@ data class SalesRegisterRow(
     val sgstAmount: Double? = null,
     val igstAmount: Double? = null,
     val secondaryInfo: String = "",
+    val creditNoteNumber: String? = null,
     val financialYearStart: Int = 0,
     val createdAt: Long = 0,
     val updatedAt: Long = 0,

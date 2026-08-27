@@ -5,19 +5,21 @@ import com.vilync.ophthalmicerp.data.entity.OpeningStockEntity
 import com.vilync.ophthalmicerp.data.entity.OpeningStockItemEntity
 import com.vilync.ophthalmicerp.data.entity.StockMovementEntity
 import com.vilync.ophthalmicerp.data.repository.AuditTrailRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentNumberingRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentType
 import com.vilync.ophthalmicerp.data.repository.InventoryRepository
 import com.vilync.ophthalmicerp.data.repository.OpeningStockRepository
 import com.vilync.ophthalmicerp.feature.master.product.data.ProductMasterRepository
 import com.vilync.ophthalmicerp.data.repository.StockMovementRepository
 import com.vilync.ophthalmicerp.feature.product.model.TrackingType
-import kotlinx.coroutines.flow.first
 
 class OpeningStockUseCase(
     private val openingStockRepository: OpeningStockRepository,
     private val inventoryRepository: InventoryRepository,
     private val stockMovementRepository: StockMovementRepository,
     private val productMasterRepository: ProductMasterRepository,
-    private val auditTrailRepository: AuditTrailRepository
+    private val auditTrailRepository: AuditTrailRepository,
+    private val numberingRepository: DocumentNumberingRepository
 ) {
 
     suspend fun saveDraft(
@@ -39,7 +41,17 @@ class OpeningStockUseCase(
                 throw IllegalStateException("Only DRAFT documents can be posted. Current status: ${openingStock.status}")
             }
 
-            val items = openingStockRepository.getOpeningStockItems(openingStockId).first()
+            // Obtain next VMOS sequence only at POST stage.
+            val finalEntryNumber = if (openingStock.entryNumber.startsWith("DRAFT-", ignoreCase = true)) {
+                numberingRepository.getNextDocumentNumber(
+                    DocumentType.OPENING_STOCK,
+                    openingStock.financialYearStart
+                )
+            } else {
+                openingStock.entryNumber
+            }
+
+            val items = openingStockRepository.getOpeningStockItemsList(openingStockId)
 
             items.forEach { item ->
                 val product = productMasterRepository.getProductById(item.productId)
@@ -52,10 +64,10 @@ class OpeningStockUseCase(
                 }
 
                 if (trackingMode == TrackingType.SERIAL) {
-                    val serialNumber = item.batchNumber // Assuming serial is in batch field for simplified Phase 2
+                    val serialNumber = item.serialNumber
                     
                     if (serialNumber.isBlank()) {
-                        throw IllegalStateException("Serial Number is required for product ${item.productName}")
+                        throw IllegalStateException("Serial Number (LMDE) is required for product ${item.productName}")
                     }
 
                     // Strict Active Serial Validation
@@ -69,11 +81,11 @@ class OpeningStockUseCase(
                             productId = item.productId,
                             power = item.power,
                             serialNumber = serialNumber,
-                            batchNumber = "", 
+                            batchNumber = item.batchNumber, 
                             expiryDate = item.expiryDate,
                             receivedDate = openingStock.entryDate,
                             supplierName = "OPENING STOCK",
-                            purchaseInvoiceNumber = openingStock.entryNumber,
+                            purchaseInvoiceNumber = finalEntryNumber,
                             status = "IN_STOCK"
                         )
                     )
@@ -86,7 +98,7 @@ class OpeningStockUseCase(
                             fromStatus = "",
                             toStatus = "IN_STOCK",
                             partyName = "INTERNAL",
-                            referenceNumber = openingStock.entryNumber,
+                            referenceNumber = finalEntryNumber,
                             movementDate = openingStock.entryDate,
                             remarks = "Opening stock initialization"
                         )
@@ -94,9 +106,11 @@ class OpeningStockUseCase(
                 }
             }
 
-            // Update status to POSTED
+            // Update status to POSTED and assign final VMOS number.
             openingStockRepository.updateOpeningStock(
                 openingStock.copy(
+                    entryNumber = finalEntryNumber,
+                    normalizedEntryNumber = finalEntryNumber.trim().uppercase(),
                     status = "POSTED",
                     updatedAt = System.currentTimeMillis()
                 )
@@ -107,8 +121,8 @@ class OpeningStockUseCase(
                 module = "INVENTORY",
                 action = "POST_OPENING_STOCK",
                 recordId = openingStockId,
-                referenceNumber = openingStock.entryNumber,
-                description = "Opening Stock ${openingStock.entryNumber} posted."
+                referenceNumber = finalEntryNumber,
+                description = "Opening Stock $finalEntryNumber posted."
             )
         }
     }
@@ -122,7 +136,7 @@ class OpeningStockUseCase(
                 throw IllegalStateException("Only POSTED documents can be cancelled.")
             }
 
-            val items = openingStockRepository.getOpeningStockItems(openingStockId).first()
+            val items = openingStockRepository.getOpeningStockItemsList(openingStockId)
 
             items.forEach { item ->
                 val product = productMasterRepository.getProductById(item.productId)
@@ -135,32 +149,34 @@ class OpeningStockUseCase(
                 }
 
                 if (trackingMode == TrackingType.SERIAL) {
-                    val serialNumber = item.batchNumber
-                    val unit = inventoryRepository.getBySerialNumber(serialNumber)
+                    val serialToLookup = if (item.serialNumber.isNotBlank()) item.serialNumber else item.batchNumber
+                    val unit = inventoryRepository.getBySerialNumber(serialToLookup)
                     
-                    if (unit != null) {
-                        val movementCount = stockMovementRepository.countDownstreamMovements(unit.id)
-                        if (movementCount > 0) {
-                            throw IllegalStateException("Serial Number $serialNumber cannot be cancelled because it has downstream stock movements.")
-                        }
-
-                        // Reversal Entry Pattern
-                        inventoryRepository.updateStatus(unit.id, "CANCELLED_FROM_OPENING")
-                        
-                        stockMovementRepository.insertMovement(
-                            StockMovementEntity(
-                                inventoryUnitId = unit.id,
-                                serialNumber = serialNumber,
-                                movementType = "OPENING_STOCK_CANCELLED",
-                                fromStatus = "IN_STOCK",
-                                toStatus = "CANCELLED_FROM_OPENING",
-                                partyName = "INTERNAL",
-                                referenceNumber = openingStock.entryNumber,
-                                movementDate = openingStock.entryDate,
-                                remarks = "Opening stock cancelled: $reason"
-                            )
-                        )
+                    if (unit == null) {
+                        throw IllegalStateException("Physical inventory unit for Serial Number $serialToLookup could not be found. Reversal failed.")
                     }
+
+                    val movementCount = stockMovementRepository.countDownstreamMovements(unit.id)
+                    if (movementCount > 0) {
+                        throw IllegalStateException("Serial Number $serialToLookup cannot be cancelled because it has downstream stock movements ($movementCount).")
+                    }
+
+                    // Reversal Entry Pattern
+                    inventoryRepository.updateStatus(unit.id, "CANCELLED_FROM_OPENING")
+                    
+                    stockMovementRepository.insertMovement(
+                        StockMovementEntity(
+                            inventoryUnitId = unit.id,
+                            serialNumber = serialToLookup,
+                            movementType = "OPENING_STOCK_CANCELLED",
+                            fromStatus = "IN_STOCK",
+                            toStatus = "CANCELLED_FROM_OPENING",
+                            partyName = "INTERNAL",
+                            referenceNumber = openingStock.entryNumber,
+                            movementDate = openingStock.entryDate,
+                            remarks = "Opening stock cancelled: $reason"
+                        )
+                    )
                 }
             }
 
@@ -174,6 +190,50 @@ class OpeningStockUseCase(
                 referenceNumber = openingStock.entryNumber,
                 description = "Opening Stock ${openingStock.entryNumber} cancelled. Reason: $reason"
             )
+        }
+    }
+
+    /**
+     * Identifies and reverses physical inventory for already-CANCELLED Opening Stock 
+     * documents that failed to reverse their stock due to the previous 'Flow' bug.
+     */
+    suspend fun reconcileGhostStock() {
+        openingStockRepository.withTransaction {
+            val cancelledStocks = openingStockRepository.getCancelledOpeningStocks()
+            
+            cancelledStocks.forEach { stock ->
+                val items = openingStockRepository.getOpeningStockItemsList(stock.id)
+                
+                items.forEach { item ->
+                    val serialToLookup = if (item.serialNumber.isNotBlank()) item.serialNumber else item.batchNumber
+                    if (serialToLookup.isNotBlank()) {
+                        val unit = inventoryRepository.getBySerialNumber(serialToLookup)
+                        
+                        if (unit != null && unit.status == "IN_STOCK") {
+                            val movementCount = stockMovementRepository.countDownstreamMovements(unit.id)
+                            
+                            // Reconcile ONLY if no downstream activity exists.
+                            if (movementCount == 0) {
+                                inventoryRepository.updateStatus(unit.id, "CANCELLED_FROM_OPENING")
+                                
+                                stockMovementRepository.insertMovement(
+                                    StockMovementEntity(
+                                        inventoryUnitId = unit.id,
+                                        serialNumber = serialToLookup,
+                                        movementType = "OPENING_STOCK_RECONCILED",
+                                        fromStatus = "IN_STOCK",
+                                        toStatus = "CANCELLED_FROM_OPENING",
+                                        partyName = "SYSTEM",
+                                        referenceNumber = stock.entryNumber,
+                                        movementDate = stock.entryDate,
+                                        remarks = "Automatic ghost stock reconciliation"
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

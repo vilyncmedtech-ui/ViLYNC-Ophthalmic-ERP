@@ -25,6 +25,8 @@ data class SerialMovementHistoryUiState(
 
     val serialNumber: String = "",
 
+    val serialPrefix: String = "",
+
     val productName: String = "",
 
     val brandName: String = "",

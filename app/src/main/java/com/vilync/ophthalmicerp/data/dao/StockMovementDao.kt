@@ -46,7 +46,7 @@ interface StockMovementDao {
         SELECT *
         FROM stock_movements
         WHERE inventoryUnitId = :inventoryUnitId
-        ORDER BY id DESC
+        ORDER BY id ASC
         """
     )
     fun getMovementHistoryByUnit(
@@ -66,7 +66,7 @@ interface StockMovementDao {
         SELECT *
         FROM stock_movements
         WHERE serialNumber = :serialNumber
-        ORDER BY id DESC
+        ORDER BY id ASC
         """
     )
     fun getMovementHistoryBySerialNumber(
@@ -139,7 +139,7 @@ interface StockMovementDao {
         SELECT COUNT(*)
         FROM stock_movements
         WHERE inventoryUnitId = :inventoryUnitId
-          AND movementType != 'PURCHASE_RECEIVED'
+          AND movementType NOT IN ('PURCHASE_RECEIVED', 'OPENING_STOCK')
         """
     )
     suspend fun countDownstreamMovements(

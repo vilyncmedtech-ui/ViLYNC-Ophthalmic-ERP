@@ -3,8 +3,8 @@ package com.vilync.ophthalmicerp.feature.designer.data.entity
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.vilync.ophthalmicerp.feature.designer.domain.model.DesignerDocumentType
-import com.vilync.ophthalmicerp.feature.designer.domain.model.TemplateStatus
+import com.vilync.ophthalmicerp.core.document.domain.DesignerDocumentType
+import com.vilync.ophthalmicerp.core.document.domain.TemplateStatus
 
 /**
  * Core entity for Document Templates.

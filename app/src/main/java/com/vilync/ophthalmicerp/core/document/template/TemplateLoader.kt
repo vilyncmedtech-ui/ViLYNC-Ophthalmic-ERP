@@ -1,7 +1,5 @@
 package com.vilync.ophthalmicerp.core.document.template
 
-import com.vilync.ophthalmicerp.feature.designer.data.repository.DocumentTemplateRepository
-
 /**
  * Responsible for retrieving raw template data based on a resolution result.
  */

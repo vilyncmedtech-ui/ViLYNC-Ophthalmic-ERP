@@ -20,6 +20,14 @@ interface FinancialTransactionDao {
     @Query("SELECT * FROM financial_transactions ORDER BY id DESC")
     fun getAllTransactions(): Flow<List<FinancialTransactionEntity>>
 
+    @Query("""
+        SELECT ft.*, p.partyName as partyName 
+        FROM financial_transactions ft
+        LEFT JOIN parties p ON ft.partyId = p.id
+        ORDER BY ft.id DESC
+    """)
+    fun getAllTransactionRows(): Flow<List<FinancialTransactionRow>>
+
     @Query("SELECT * FROM financial_transactions WHERE id = :id LIMIT 1")
     suspend fun getTransactionById(id: Long): FinancialTransactionEntity?
 
@@ -34,6 +42,9 @@ interface FinancialTransactionDao {
 
     @Query("SELECT SUM(amount) FROM financial_transactions WHERE partyId = :partyId AND type = :type AND status = 'POSTED'")
     suspend fun getTotalAmountByPartyAndType(partyId: Long, type: String): Double?
+
+    @Query("SELECT partyId, SUM(amount) as total FROM financial_transactions WHERE type = :type AND status = 'POSTED' GROUP BY partyId")
+    suspend fun getAllPartiesTotalByType(type: String): List<PartyTotal>
 
     @Query("SELECT SUM(amount) FROM financial_transactions WHERE type = :type AND transactionDate = :date AND status = 'POSTED'")
     suspend fun getTodayTotalByType(type: String, date: String): Double?

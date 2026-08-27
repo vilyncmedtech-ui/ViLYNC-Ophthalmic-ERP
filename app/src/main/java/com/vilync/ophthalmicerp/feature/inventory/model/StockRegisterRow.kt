@@ -15,6 +15,10 @@ data class StockRegisterRow(
     val purchasedQuantity: Int,
 
     val purchaseReturnQuantity: Int,
+    
+    val soldQuantity: Int,
+
+    val otherOutQuantity: Int,
 
     val availableQuantity: Int
 )

@@ -91,52 +91,110 @@ class BackupIntegrityVerifier(private val context: Context) {
     )
 
     fun getRestoreSummary(dbFile: File): Result<RestoreSummary> {
+        Log.i(TAG, "RESTORE_FORENSIC_START: Path=${dbFile.absolutePath} | Size=${dbFile.length()} bytes")
         return runCatching {
             var summary = RestoreSummary()
+            // Open specifically in READONLY mode
             SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                val version = db.version
+                Log.i(TAG, "RESTORE_FORENSIC: PRAGMA user_version=$version")
+                
+                db.rawQuery("PRAGMA integrity_check", null).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        Log.i(TAG, "RESTORE_FORENSIC: PRAGMA integrity_check=${cursor.getString(0)}")
+                    }
+                }
+
+                logTableInventory(db)
+                
+                val existingTables = getExistingTables(db)
+                
+                // Detailed row counting
+                val users = if (existingTables.contains("users")) getCount(db, "users") else -1
+                val products = if (existingTables.contains("products")) getCount(db, "products") else -1
+                val sales = if (existingTables.contains("sales")) getCount(db, "sales") else -1
+                val purchases = if (existingTables.contains("purchases")) getCount(db, "purchases") else -1
+                val parties = if (existingTables.contains("parties")) getCount(db, "parties") else -1
+                val profile = if (existingTables.contains("company_profile")) getCount(db, "company_profile") else -1
+
+                Log.i(TAG, "RESTORE_FORENSIC Counts: Users=$users, Products=$products, Sales=$sales, Purchases=$purchases, Parties=$parties, ProfileRows=$profile")
+
                 summary = summary.copy(
-                    dbVersion = db.version,
-                    usersCount = getCount(db, "users"),
-                    productsCount = getCount(db, "products"),
-                    partiesCount = getCount(db, "parties"),
-                    salesCount = getCount(db, "sales"),
-                    purchasesCount = getCount(db, "purchases")
+                    dbVersion = version,
+                    usersCount = users.coerceAtLeast(0),
+                    productsCount = products.coerceAtLeast(0),
+                    partiesCount = parties.coerceAtLeast(0),
+                    salesCount = sales.coerceAtLeast(0),
+                    purchasesCount = purchases.coerceAtLeast(0)
                 )
                 
-                db.rawQuery("SELECT legalName, gstin FROM company_profile LIMIT 1", null).use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        summary = summary.copy(
-                            companyName = cursor.getString(0) ?: "Unknown",
-                            companyGst = cursor.getString(1) ?: "N/A"
-                        )
+                if (existingTables.contains("company_profile")) {
+                    try {
+                        db.rawQuery("SELECT legalName, gstin FROM company_profile LIMIT 1", null).use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                val legalName = cursor.getString(0) ?: "Unknown"
+                                val gstin = cursor.getString(1) ?: "N/A"
+                                Log.i(TAG, "RESTORE_FORENSIC Profile: Name=$legalName, GST=$gstin")
+                                summary = summary.copy(
+                                    companyName = legalName,
+                                    companyGst = gstin
+                                )
+                            } else {
+                                Log.w(TAG, "RESTORE_FORENSIC: company_profile table is empty")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "RESTORE_FORENSIC: Failed to read company_profile row", e)
                     }
                 }
             }
+            Log.i(TAG, "RESTORE_FORENSIC_FINISH: Summary calculated: $summary")
             summary
+        }.onFailure { e ->
+            Log.e(TAG, "RESTORE_FORENSIC: getRestoreSummary CRITICAL FAILURE", e)
         }
     }
 
-    /**
-     * Performs a post-restore validation to ensure the database is functional.
-     */
+    private fun getExistingTables(db: SQLiteDatabase): List<String> {
+        val tables = mutableListOf<String>()
+        try {
+            db.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    tables.add(cursor.getString(0))
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to list tables", e)
+        }
+        return tables
+    }
+
     fun validatePostRestore(dbFile: File): Result<Unit> {
+        Log.d(TAG, "validatePostRestore() for ${dbFile.absolutePath}")
         val integrity = verify(dbFile)
-        if (!integrity.isSuccess) return Result.failure(Exception(integrity.message))
+        if (!integrity.isSuccess) {
+            Log.e(TAG, "Post-restore integrity check failed: ${integrity.message}")
+            return Result.failure(Exception(integrity.message))
+        }
         
         return runCatching {
             SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
-                val users = getCount(db, "users")
-                val products = getCount(db, "products")
-                val companyProfile = getCount(db, "company_profile")
-                val sales = getCount(db, "sales")
-                val purchases = getCount(db, "purchases")
+                val tables = getExistingTables(db)
+                val users = if (tables.contains("users")) getCount(db, "users") else 0
+                val products = if (tables.contains("products")) getCount(db, "products") else 0
+                val sales = if (tables.contains("sales")) getCount(db, "sales") else 0
+                val purchases = if (tables.contains("purchases")) getCount(db, "purchases") else 0
                 
-                if (users == 0) throw Exception("Post-restore validation failed: No user accounts found.")
-                if (companyProfile == 0) throw Exception("Post-restore validation failed: Company Profile is missing.")
+                Log.i(TAG, "RESTORE_FORENSIC Post-restore Verify: Users=$users, Products=$products, Sales=$sales, Purchases=$purchases")
                 
-                Log.d(TAG, "Post-restore summary: Users=$users, Products=$products, Profile=$companyProfile, Sales=$sales, Purchases=$purchases")
+                if (users == 0) {
+                    throw Exception("Restore Aborted: The selected backup contains no valid user accounts.")
+                }
+                // company_profile rows check removed as confirmed optional.
             }
             Unit
+        }.onFailure { e ->
+            Log.e(TAG, "validatePostRestore() Logic validation failed", e)
         }
     }
 
@@ -145,8 +203,23 @@ class BackupIntegrityVerifier(private val context: Context) {
             db.rawQuery("SELECT COUNT(*) FROM $table", null).use { cursor ->
                 if (cursor.moveToFirst()) cursor.getInt(0) else 0
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "getCount failed for table: $table", e)
             0
+        }
+    }
+
+    private fun logTableInventory(db: SQLiteDatabase) {
+        try {
+            db.rawQuery("SELECT name FROM sqlite_master WHERE type='table'", null).use { cursor ->
+                val tables = mutableListOf<String>()
+                while (cursor.moveToNext()) {
+                    tables.add(cursor.getString(0))
+                }
+                Log.i(TAG, "RESTORE_FORENSIC Table Inventory: ${tables.joinToString(", ")}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inventory tables", e)
         }
     }
 }

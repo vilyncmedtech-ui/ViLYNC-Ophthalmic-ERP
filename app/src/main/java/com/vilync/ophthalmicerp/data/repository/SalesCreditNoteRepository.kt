@@ -62,6 +62,119 @@ class SalesCreditNoteRepository(
         creditNoteDao.physicalReturnAlreadyExists(inventoryUnitId)
 
     /**
+     * Updates an existing Credit Note atomically.
+     *
+     * Inventory-safe edit transaction:
+     * - unchanged physical serials remain IN_STOCK
+     * - removed serials: returnToStock=true -> SOLD + SALE_EDIT_SOLD (assuming they were SOLD before CN)
+     * - newly added serials: SOLD -> IN_STOCK + SALE_EDIT_RETURN
+     */
+    suspend fun updateCompleteCreditNote(
+        creditNoteId: Long,
+        creditNote: SalesCreditNoteEntity,
+        itemsWithLenses: List<Pair<SalesCreditNoteItemEntity, List<SalesCreditNoteLensEntity>>>
+    ): Long {
+        val db = requireNotNull(database) {
+            "AppDatabase is required for atomic Credit Note editing."
+        }
+
+        require(creditNoteId > 0L) { "Valid Credit Note is required for editing." }
+        require(creditNote.customerId > 0L) { "Customer / Hospital is required." }
+        require(creditNote.creditNoteNumber.trim().isNotBlank()) { "Credit Note Number is required." }
+
+        return db.withTransaction {
+            val inventoryDao = db.inventoryDao()
+            val stockMovementDao = db.stockMovementDao()
+
+            val existingCN = requireNotNull(creditNoteDao.getCreditNoteById(creditNoteId)) {
+                "Credit Note could not be found."
+            }
+
+            require(existingCN.status.trim().equals("POSTED", ignoreCase = true)) {
+                "Only a POSTED Credit Note can be edited. Current status: ${existingCN.status}."
+            }
+
+            // Duplicate number check (excluding self)
+            val normalizedNumber = creditNote.creditNoteNumber.trim().uppercase()
+            if (!normalizedNumber.equals(existingCN.normalizedCreditNoteNumber, ignoreCase = true)) {
+                require(!creditNoteDao.creditNoteNumberExists(normalizedNumber, creditNote.financialYearStart)) {
+                    "Credit Note Number ${creditNote.creditNoteNumber.trim()} already exists."
+                }
+            }
+
+            val existingItems = creditNoteDao.getItemsByCreditNoteId(creditNoteId)
+            val existingLenses = existingItems.flatMap { item ->
+                creditNoteDao.getLensesByCreditNoteId(creditNoteId).filter { it.creditNoteItemId == item.id }
+            }
+            val oldIds = existingLenses.map { it.inventoryUnitId }.toSet()
+
+            val newLenses = itemsWithLenses.flatMap { it.second }
+            val newIds = newLenses.map { it.inventoryUnitId }
+            val newIdsSet = newIds.toSet()
+
+            val removedIds = oldIds - newIdsSet
+            val addedIds = newIdsSet - oldIds
+
+            // Validate added lenses are currently SOLD (available for return)
+            addedIds.forEach { id ->
+                val unit = requireNotNull(inventoryDao.getById(id))
+                require(unit.status.equals("SOLD", ignoreCase = true)) {
+                    "Serial Number ${unit.serialNumber} is not SOLD and cannot be returned."
+                }
+            }
+
+            // 1. Process Removed Lenses (Previously returned, now stay SOLD)
+            removedIds.forEach { id ->
+                val unit = requireNotNull(inventoryDao.getById(id))
+                inventoryDao.updateStatus(id, "SOLD")
+                stockMovementDao.insertMovement(
+                    StockMovementEntity(
+                        inventoryUnitId = unit.id,
+                        serialNumber = unit.serialNumber.trim(),
+                        movementType = "SALE_EDIT_SOLD",
+                        fromStatus = "IN_STOCK",
+                        toStatus = "SOLD",
+                        partyName = creditNote.customerName.trim(),
+                        referenceNumber = creditNote.creditNoteNumber.trim(),
+                        movementDate = creditNote.creditNoteDate.trim(),
+                        remarks = "Serial restored to SOLD while editing Credit Note ${creditNote.creditNoteNumber.trim()}"
+                    )
+                )
+            }
+
+            // 2. Process Added Lenses (Newly returned to stock)
+            addedIds.forEach { id ->
+                val unit = requireNotNull(inventoryDao.getById(id))
+                inventoryDao.updateStatus(id, "IN_STOCK")
+                stockMovementDao.insertMovement(
+                    StockMovementEntity(
+                        inventoryUnitId = unit.id,
+                        serialNumber = unit.serialNumber.trim(),
+                        movementType = "SALE_EDIT_RETURN",
+                        fromStatus = "SOLD",
+                        toStatus = "IN_STOCK",
+                        partyName = creditNote.customerName.trim(),
+                        referenceNumber = creditNote.creditNoteNumber.trim(),
+                        movementDate = creditNote.creditNoteDate.trim(),
+                        remarks = "Serial returned to stock while editing Credit Note ${creditNote.creditNoteNumber.trim()}"
+                    )
+                )
+            }
+
+            creditNoteDao.replaceCompleteCreditNoteDocument(
+                creditNote = creditNote.copy(
+                    id = creditNoteId,
+                    status = "POSTED",
+                    updatedAt = System.currentTimeMillis()
+                ),
+                itemsWithLenses = itemsWithLenses
+            )
+
+            creditNoteId
+        }
+    }
+
+    /**
      * Saves a complete Credit Note atomically. For SALES_RETURN, every lens marked
      * returnToStock must still be SOLD and is restored to IN_STOCK in the same
      * Room transaction, with a permanent SALES_RETURN stock movement.
@@ -76,7 +189,9 @@ class SalesCreditNoteRepository(
 
         require(creditNote.id == 0L) { "New Credit Note must not already have a database ID." }
         require(creditNote.customerId > 0L) { "Customer / Hospital is required." }
-        require(creditNote.creditNoteNumber.trim().isNotBlank()) { "Credit Note Number is required." }
+        require(creditNote.creditNoteNumber.trim().isNotBlank() || numberingRepository != null) {
+            "Credit Note Number is required."
+        }
         require(creditNote.creditNoteDate.trim().isNotBlank()) { "Credit Note Date is required." }
         require(creditNote.financialYearStart > 0) { "Valid Financial Year is required." }
         require(creditNote.creditNoteType in setOf("SALES_RETURN", "FINANCIAL_ADJUSTMENT")) {
@@ -86,8 +201,12 @@ class SalesCreditNoteRepository(
 
         return db.withTransaction {
             val normalizedNumber = creditNote.creditNoteNumber.trim().uppercase()
-            require(!creditNoteDao.creditNoteNumberExists(normalizedNumber, creditNote.financialYearStart)) {
-                "Credit Note Number ${creditNote.creditNoteNumber.trim()} already exists in this Financial Year."
+            
+            // Duplicate check only if number is already provided (e.g. from UI)
+            if (normalizedNumber.isNotBlank()) {
+                require(!creditNoteDao.creditNoteNumberExists(normalizedNumber, creditNote.financialYearStart)) {
+                    "Credit Note Number ${creditNote.creditNoteNumber.trim()} already exists in this Financial Year."
+                }
             }
 
             val allLenses = itemsWithLenses.flatMap { it.second }
@@ -119,11 +238,16 @@ class SalesCreditNoteRepository(
                 }
             }
 
-            val finalCreditNoteNumber =
+            val finalCreditNoteNumber = if (creditNote.creditNoteNumber.trim().isNotBlank()) {
+                creditNote.creditNoteNumber.trim()
+            } else {
                 numberingRepository?.getNextDocumentNumber(
                     DocumentType.CREDIT_NOTE,
                     creditNote.financialYearStart
-                ) ?: creditNote.creditNoteNumber.trim()
+                ) ?: ""
+            }
+
+            require(finalCreditNoteNumber.isNotBlank()) { "Credit Note Number could not be generated." }
 
             val creditNoteId = creditNoteDao.insertCreditNote(
                 creditNote.copy(
@@ -188,9 +312,9 @@ class SalesCreditNoteRepository(
                         fromStatus = "SOLD",
                         toStatus = "IN_STOCK",
                         partyName = creditNote.customerName.trim(),
-                        referenceNumber = creditNote.creditNoteNumber.trim(),
+                        referenceNumber = finalCreditNoteNumber,
                         movementDate = creditNote.creditNoteDate.trim(),
-                        remarks = "Returned to stock through Credit Note ${creditNote.creditNoteNumber.trim()} against Invoice ${creditNote.originalInvoiceNumber.trim()}"
+                        remarks = "Returned to stock through Credit Note $finalCreditNoteNumber against Invoice ${creditNote.originalInvoiceNumber.trim()}"
                     )
                 )
             }

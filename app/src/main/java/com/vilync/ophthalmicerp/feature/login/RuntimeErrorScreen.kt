@@ -19,23 +19,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.vilync.ophthalmicerp.data.database.DatabaseProvider
+import com.vilync.ophthalmicerp.feature.login.model.StartupFailure
 
 @Composable
 fun RuntimeErrorScreen(
     message: String,
     diagnostics: String,
-    report: DatabaseProvider.DatabaseHealthReport,
+    report: Any, 
     onRetry: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
 
-    val healthColor = when (report.healthScore) {
-        DatabaseProvider.HealthScore.HEALTHY -> Color(0xFF4CAF50)
-        DatabaseProvider.HealthScore.WARNING -> Color(0xFFFFC107)
-        DatabaseProvider.HealthScore.CRITICAL -> Color(0xFFF44336)
-    }
+    val healthColor = Color(0xFFF44336) 
 
     Column(
         modifier = Modifier
@@ -64,8 +60,9 @@ fun RuntimeErrorScreen(
             fontWeight = FontWeight.Black
         )
 
+        val code = (report as? StartupFailure)?.code ?: "ERR_UNKNOWN"
         Text(
-            text = "Health Status: ${report.healthScore}",
+            text = "Failure Code: $code",
             style = MaterialTheme.typography.labelSmall,
             color = healthColor
         )
@@ -89,17 +86,23 @@ fun RuntimeErrorScreen(
             )
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                DiagnosticRow("Database File", if (report.fileExists) "EXISTS" else "MISSING")
-                DiagnosticRow("Connection", if (report.canOpen) "SUCCESS" else "FAILED")
-                DiagnosticRow("Actual Version", report.versionOnDisk.toString())
-                DiagnosticRow("Expected Version", report.expectedVersion.toString())
-                DiagnosticRow("Users Found", report.usersCount.toString())
-                DiagnosticRow("Business Records", if (report.hasBusinessData) "YES" else "NONE")
+                if (report is StartupFailure.MigrationFailure) {
+                    DiagnosticRow("Actual Version", report.diskVersion.toString())
+                    DiagnosticRow("Expected Version", report.expectedVersion.toString())
+                }
                 
+                if (report is StartupFailure.DaoFailure) {
+                    DiagnosticRow("Failing DAO", report.daoName)
+                }
+
+                if (report is StartupFailure.MissingTable) {
+                    DiagnosticRow("Missing Table", report.tableName)
+                }
+
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
                 
                 Text(
-                    text = "RAW DIAGNOSTICS",
+                    text = "TECHNICAL DIAGNOSTICS",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold
                 )
@@ -127,14 +130,6 @@ fun RuntimeErrorScreen(
             colors = ButtonDefaults.buttonColors(containerColor = healthColor)
         ) {
             Text(text = "RETRY BOOTSTRAP")
-        }
-
-        OutlinedButton(
-            onClick = { /* Export Logic would go here */ },
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            enabled = false // Future feature
-        ) {
-            Text(text = "EXPORT DIAGNOSTIC LOG")
         }
 
         Spacer(modifier = Modifier.height(24.dp))

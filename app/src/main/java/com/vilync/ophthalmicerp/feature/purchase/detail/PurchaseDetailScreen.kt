@@ -19,10 +19,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vilync.ophthalmicerp.core.util.ShareUtils
 import com.vilync.ophthalmicerp.data.entity.PurchaseLensEntity
 import com.vilync.ophthalmicerp.core.export.ExportReport
 import com.vilync.ophthalmicerp.core.export.ReportExportUtils
-import com.vilync.ophthalmicerp.ui.components.PrintExportActionBar
+import com.vilync.ophthalmicerp.ui.components.StandardDetailHeader
+import java.io.File
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -34,6 +36,7 @@ private val CardBorder = Color(0xFFDDE4EE)
 private val NavyText = Color(0xFF18233A)
 private val MutedText = Color(0xFF667085)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PurchaseDetailScreen(
     viewModel: PurchaseDetailViewModel,
@@ -43,6 +46,7 @@ fun PurchaseDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val money = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
+    val context = LocalContext.current
 
     if (uiState.isLoading) {
         Box(
@@ -55,30 +59,30 @@ fun PurchaseDetailScreen(
     }
 
     if (uiState.errorMessage != null) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp)
-        ) {
-            Text(
-                "Purchase Detail",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                uiState.errorMessage ?: "Unable to load purchase details.",
-                color = MaterialTheme.colorScheme.error
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Scaffold(
+            topBar = {
+                StandardDetailHeader(
+                    title = "Purchase Detail",
+                    onBack = onBack,
+                    onDashboard = onDashboard,
+                    onPrint = {},
+                    onPdf = {}
+                )
+            }
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(20.dp)
             ) {
-                OutlinedButton(onClick = onBack) {
-                    Text("← Back")
-                }
-                OutlinedButton(onClick = onDashboard) {
-                    Text("⌂ Dashboard")
+                Text(
+                    uiState.errorMessage ?: "Unable to load purchase details.",
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = viewModel::refresh) {
+                    Text("Retry")
                 }
             }
         }
@@ -86,10 +90,10 @@ fun PurchaseDetailScreen(
     }
 
     val purchase = uiState.purchase ?: return
-    val context = LocalContext.current
+    
     val detailReport = remember(purchase, uiState.items) {
         ExportReport(
-            title = "Purchase Invoice ${purchase.invoiceNumber}",
+            title = if (purchase.status == "ORDER") "Purchase Order ${purchase.invoiceNumber}" else "Purchase Invoice ${purchase.invoiceNumber}",
             headers = listOf("Product", "Serial", "Power", "Qty", "Rate", "GST", "Total"),
             rows = uiState.items.map { detailItem ->
                 val item = detailItem.purchaseItem
@@ -105,163 +109,170 @@ fun PurchaseDetailScreen(
             }
         )
     }
+
     val pdfLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri -> uri?.let { ReportExportUtils.exportPdf(context, it, detailReport) } }
+
     val excelLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri -> uri?.let { ReportExportUtils.exportExcelCsv(context, it, detailReport) } }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(PageBackground)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 14.dp, vertical = 8.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "Purchase Detail",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "${purchase.invoiceNumber}  •  ${purchase.supplierName}",
-                    fontSize = 13.sp,
-                    color = Color.Gray
-                )
-            }
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(7.dp)
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { onEditPurchase(purchase.id) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AccentBlue,
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Text("Edit Purchase", fontWeight = FontWeight.SemiBold)
+    Scaffold(
+        topBar = {
+            StandardDetailHeader(
+                title = if (purchase.status == "ORDER") "Purchase Order" else "Purchase Invoice",
+                onBack = onBack,
+                onDashboard = onDashboard,
+                onPrint = {
+                    if (purchase.status == "ORDER") {
+                        viewModel.printOrder(context, "PO ${purchase.invoiceNumber}")
+                    } else {
+                        ReportExportUtils.print(context, detailReport)
                     }
-                    OutlinedButton(onClick = onBack) { Text("← Back") }
-                    OutlinedButton(onClick = onDashboard) { Text("⌂ Dashboard") }
-                }
-
-                PrintExportActionBar(
-                    onPrint = { ReportExportUtils.print(context, detailReport) },
-                    onExportPdf = { pdfLauncher.launch("Purchase_${purchase.invoiceNumber}.pdf") },
-                    onExportExcel = { excelLauncher.launch("Purchase_${purchase.invoiceNumber}.csv") }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(7.dp))
-
-        CompactCard(title = "Invoice Information") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                CompactField("Invoice No.", purchase.invoiceNumber, Modifier.weight(1.35f))
-                CompactField("Invoice Date", purchase.invoiceDate, Modifier.weight(1f))
-                CompactField("Received Date", purchase.receivedDate, Modifier.weight(1f))
-                CompactField("Purchase Type", purchase.purchaseType, Modifier.weight(1f))
-                CompactField("Payment Type", purchase.paymentType, Modifier.weight(1f))
-                CompactField(
-                    "Credit",
-                    if (purchase.creditDays > 0) "${purchase.creditDays} Days" else "-",
-                    Modifier.weight(.8f)
-                )
-            }
-
-            if (purchase.reference.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Reference: ${purchase.reference}",
-                    fontSize = 13.sp
-                )
-            }
-        }
-
-        Spacer(Modifier.height(6.dp))
-
-        CompactCard(title = "Supplier / Vendor") {
-            Text(
-                purchase.supplierName,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold
+                },
+                onPdf = {
+                    if (purchase.status == "ORDER") {
+                        val exportDir = File(context.cacheDir, "exports")
+                        if (!exportDir.exists()) exportDir.mkdirs()
+                        val file = File(exportDir, "PO_${purchase.invoiceNumber.replace("/", "_")}.pdf")
+                        viewModel.generateOrderPdf(file) { success ->
+                            if (success) ShareUtils.shareFile(context, file, "application/pdf", "Share Purchase Order")
+                        }
+                    } else {
+                        pdfLauncher.launch("Purchase_${purchase.invoiceNumber.replace("/", "_")}.pdf")
+                    }
+                },
+                onExcel = {
+                    if (purchase.status == "ORDER") {
+                        viewModel.exportExcelAndShare(context)
+                    } else {
+                        excelLauncher.launch("Purchase_${purchase.invoiceNumber.replace("/", "_")}.csv")
+                    }
+                },
+                onEdit = { onEditPurchase(purchase.id) },
+                isEditable = true
             )
         }
-
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            "Products",
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(6.dp))
-
-        if (uiState.items.isEmpty()) {
-            Text("No products found in this purchase.", color = Color.Gray)
-        } else {
-            uiState.items.forEachIndexed { index, detailItem ->
-                CompactPurchaseItem(
-                    itemNumber = index + 1,
-                    detailItem = detailItem,
-                    money = money
-                )
-                if (index < uiState.items.lastIndex) {
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        CompactCard(title = "Financial Summary") {
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(PageBackground)
+                .verticalScroll(rememberScrollState())
+                .padding(padding)
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                CompactAmount("Sub Total", money.format(purchase.subtotal), Modifier.weight(1f))
-                CompactAmount("Discount", money.format(purchase.discountAmount), Modifier.weight(1f))
-                CompactAmount("Taxable", money.format(purchase.taxableAmount), Modifier.weight(1f))
-
-                if (purchase.igstAmount != 0.0) {
-                    CompactAmount("IGST", money.format(purchase.igstAmount), Modifier.weight(1f))
-                } else {
-                    CompactAmount("CGST", money.format(purchase.cgstAmount), Modifier.weight(1f))
-                    CompactAmount("SGST", money.format(purchase.sgstAmount), Modifier.weight(1f))
-                }
-
-                Column(
-                    modifier = Modifier.weight(1.2f),
-                    horizontalAlignment = Alignment.End
-                ) {
-                    Text("Grand Total", fontSize = 11.sp, color = Color.Gray)
+                Column(Modifier.weight(1f)) {
                     Text(
-                        money.format(purchase.grandTotal),
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AccentBlue
+                        "${purchase.invoiceNumber}  •  ${purchase.supplierName}",
+                        fontSize = 13.sp,
+                        color = Color.Gray
                     )
                 }
             }
-        }
 
-        Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(7.dp))
+
+            CompactCard(title = if (purchase.status == "ORDER") "Order Information" else "Invoice Information") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CompactField(if (purchase.status == "ORDER") "PO No." else "Invoice No.", purchase.invoiceNumber, Modifier.weight(1.35f))
+                    CompactField(if (purchase.status == "ORDER") "Order Date" else "Invoice Date", purchase.invoiceDate, Modifier.weight(1f))
+                    if (purchase.status == "POSTED") {
+                        CompactField("Received Date", purchase.receivedDate, Modifier.weight(1f))
+                        CompactField("Type", purchase.purchaseType, Modifier.weight(1f))
+                    }
+                    CompactField("Payment", purchase.paymentType, Modifier.weight(1f))
+                    CompactField(
+                        "Credit",
+                        if (purchase.creditDays > 0) "${purchase.creditDays} Days" else "-",
+                        Modifier.weight(.8f)
+                    )
+                }
+
+                if (purchase.reference.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Reference: ${purchase.reference}",
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            CompactCard(title = "Supplier / Vendor") {
+                Text(
+                    purchase.supplierName,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                "Products",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(6.dp))
+
+            if (uiState.items.isEmpty()) {
+                Text("No products found in this purchase.", color = Color.Gray)
+            } else {
+                uiState.items.forEachIndexed { index, detailItem ->
+                    CompactPurchaseItem(
+                        itemNumber = index + 1,
+                        detailItem = detailItem,
+                        money = money
+                    )
+                    if (index < uiState.items.lastIndex) {
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            CompactCard(title = "Summary") {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    CompactAmount("Sub Total", money.format(purchase.subtotal), Modifier.weight(1f))
+                    CompactAmount("Discount", money.format(purchase.discountAmount), Modifier.weight(1f))
+                    CompactAmount("Taxable", money.format(purchase.taxableAmount), Modifier.weight(1f))
+
+                    val taxAmount = if (purchase.status == "ORDER") purchase.igstAmount else (purchase.cgstAmount + purchase.sgstAmount + purchase.igstAmount)
+                    CompactAmount("GST", money.format(taxAmount), Modifier.weight(1f))
+
+                    Column(
+                        modifier = Modifier.weight(1.2f),
+                        horizontalAlignment = Alignment.End
+                    ) {
+                        Text("Grand Total", fontSize = 11.sp, color = Color.Gray)
+                        Text(
+                            money.format(purchase.grandTotal),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentBlue
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+        }
     }
 }
 
@@ -309,21 +320,10 @@ private fun CompactPurchaseItem(
                 CompactField("Rate", money.format(item.purchaseRate), Modifier.weight(.9f))
                 CompactField("Disc.", "${formatPercent(item.discountPercent)}%", Modifier.weight(.55f))
                 CompactField("GST", "${formatPercent(item.gstPercent)}%", Modifier.weight(.5f))
-                CompactField("Batch", item.batchNumber.ifBlank { "-" }, Modifier.weight(.8f))
+                if (item.batchNumber.isNotBlank()) {
+                    CompactField("Batch", item.batchNumber, Modifier.weight(.8f))
+                }
                 CompactField("Total", money.format(item.lineTotal), Modifier.weight(.95f), valueBold = true)
-            }
-
-            HorizontalDivider(color = CardBorder, thickness = 0.7.dp)
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                CompactMeta("Category", detailItem.category.ifBlank { "-" }, Modifier.weight(.8f))
-                CompactMeta("Gross", money.format(item.grossAmount), Modifier.weight(1f))
-                CompactMeta("Discount", money.format(item.discountAmount), Modifier.weight(1f))
-                CompactMeta("Taxable", money.format(item.taxableAmount), Modifier.weight(1f))
-                CompactMeta("GST Amt.", money.format(item.gstAmount), Modifier.weight(1f))
             }
 
             if (detailItem.lenses.isNotEmpty()) {
@@ -451,23 +451,6 @@ private fun CompactField(
             fontSize = 12.sp,
             fontWeight = if (valueBold) FontWeight.Bold else FontWeight.Medium,
             maxLines = 2
-        )
-    }
-}
-
-@Composable
-private fun CompactMeta(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier) {
-        Text(label, fontSize = 10.sp, color = Color.Gray)
-        Text(
-            value,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1
         )
     }
 }

@@ -34,7 +34,8 @@ fun InventoryHomeScreen(
     onSerialStockRegisterClick: () -> Unit = {},
     onOpeningStockClick: () -> Unit = {},
     onStockAdjustmentClick: () -> Unit = {},
-    onStockReconciliationClick: () -> Unit = {}
+    onStockReconciliationClick: () -> Unit = {},
+    onAlertSettingsClick: () -> Unit = {}
 ) {
 
     Box(
@@ -301,6 +302,32 @@ fun InventoryHomeScreen(
                         onStockReconciliationClick
                 )
             }
+
+            Spacer(
+                modifier = Modifier.height(18.dp)
+            )
+
+            InventorySectionTitle(
+                title = "Alerts & Thresholds"
+            )
+
+            Spacer(
+                modifier = Modifier.height(8.dp)
+            )
+
+            InventoryMenuCard(
+                modifier = Modifier.fillMaxWidth(),
+                icon = "⚙",
+                title = "Stock Alert Settings",
+                subtitle =
+                    "Configure product and power-wise minimum stock",
+                backgroundColor =
+                    Color(0xFFF0F4FF),
+                iconColor =
+                    Color(0xFF345FA8),
+                onClick =
+                    onAlertSettingsClick
+            )
         }
     }
 }

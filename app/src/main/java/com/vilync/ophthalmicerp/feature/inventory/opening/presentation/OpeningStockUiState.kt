@@ -3,7 +3,8 @@ package com.vilync.ophthalmicerp.feature.inventory.opening.presentation
 import com.vilync.ophthalmicerp.data.entity.OpeningStockEntity
 
 data class OpeningStockUiState(
-    val isLoading: Boolean = false,
+    val isRegisterLoading: Boolean = false,
+    val isEntryLoading: Boolean = false,
     val openingStocks: List<OpeningStockEntity> = emptyList(),
     val searchQuery: String = "",
     

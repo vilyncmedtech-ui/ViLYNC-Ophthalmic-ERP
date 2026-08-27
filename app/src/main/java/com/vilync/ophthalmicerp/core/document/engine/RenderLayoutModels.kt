@@ -110,6 +110,19 @@ data class RenderTable(
 ) : RenderObject()
 
 /**
+ * Specialized ERP Invoice Repeater Table.
+ */
+data class RenderInvoiceTable(
+    override val id: String,
+    override val position: Point2D,
+    override val dimensions: Dimensions,
+    override val rotation: Float,
+    override val style: ResolvedStyle,
+    val config: InvoiceTableConfig,
+    val data: BindingValue.Table? = null
+) : RenderObject()
+
+/**
  * ERP data placeholder (e.g., {{InvoiceNo}}).
  */
 data class RenderDynamicField(

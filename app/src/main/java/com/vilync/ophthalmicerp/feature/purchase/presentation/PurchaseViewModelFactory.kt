@@ -16,7 +16,14 @@ class PurchaseViewModelFactory(
 
     private val productRepository: ProductMasterRepository,
 
-    private val auditTrailRepository: AuditTrailRepository
+    private val auditTrailRepository: AuditTrailRepository,
+
+    private val numberingRepository: com.vilync.ophthalmicerp.data.repository.DocumentNumberingRepository? = null,
+
+    private val initialProductId: Long = 0L,
+    private val initialPower: String = "",
+    private val initialQty: Int = 0,
+    private val initialStatus: String = "POSTED"
 
 ) : ViewModelProvider.Factory {
 
@@ -45,7 +52,15 @@ class PurchaseViewModelFactory(
                     productRepository,
 
                 auditTrailRepository =
-                    auditTrailRepository
+                    auditTrailRepository,
+
+                numberingRepository =
+                    numberingRepository,
+
+                initialProductId = initialProductId,
+                initialPower = initialPower,
+                initialQty = initialQty,
+                initialStatus = initialStatus
 
             ) as T
         }

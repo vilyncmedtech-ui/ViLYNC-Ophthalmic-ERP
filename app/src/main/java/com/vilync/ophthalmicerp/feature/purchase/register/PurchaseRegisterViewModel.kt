@@ -66,7 +66,9 @@ class PurchaseRegisterViewModel(
      * IMPORTANT:
      * Delete is BLOCKED if this repository has not been supplied.
      */
-    private val purchaseReturnRepository: PurchaseReturnRepository? = null
+    private val purchaseReturnRepository: PurchaseReturnRepository? = null,
+
+    private val requiredStatus: String = "POSTED"
 
 ) : ViewModel() {
 
@@ -103,7 +105,8 @@ class PurchaseRegisterViewModel(
             .flatMapLatest { financialYear ->
 
                 purchaseRepository
-                    .getPurchasesByFinancialYear(
+                    .getPurchasesByStatusAndFy(
+                        status = requiredStatus,
                         financialYearStart =
                             financialYear.startYear
                     )
@@ -418,7 +421,9 @@ class PurchaseRegisterViewModelFactory(
      * the actual PurchaseReturnRepository.
      */
     private val purchaseReturnRepository:
-    PurchaseReturnRepository? = null
+    PurchaseReturnRepository? = null,
+
+    private val requiredStatus: String = "POSTED"
 
 ) : ViewModelProvider.Factory {
 
@@ -439,7 +444,8 @@ class PurchaseRegisterViewModelFactory(
                 purchaseRepository =
                     purchaseRepository,
                 purchaseReturnRepository =
-                    purchaseReturnRepository
+                    purchaseReturnRepository,
+                requiredStatus = requiredStatus
             ) as T
         }
 

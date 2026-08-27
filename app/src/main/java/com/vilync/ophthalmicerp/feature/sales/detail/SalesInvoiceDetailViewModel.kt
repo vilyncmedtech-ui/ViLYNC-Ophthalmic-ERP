@@ -19,12 +19,15 @@ import kotlinx.coroutines.launch
 
 data class SalesInvoiceDetailLine(
     val item: SaleItemEntity,
-    val lenses: List<SaleLensEntity>
+    val lenses: List<SaleLensEntity>,
+    val hsnFromMaster: String = "",
+    val productModel: String = ""
 )
 
 data class SalesInvoiceDetailUiState(
     val isLoading: Boolean = true,
     val sale: SaleEntity? = null,
+    val creditNoteNumber: String? = null,
     val lines: List<SalesInvoiceDetailLine> = emptyList(),
     val companyProfile: CompanyProfileEntity? = null,
     val errorMessage: String? = null
@@ -66,70 +69,31 @@ class SalesInvoiceDetailViewModel(
                     "Valid Sales Invoice is required."
                 }
 
-                // =====================================================
-                // SALES INVOICE
-                // =====================================================
-
-                val sale =
+                val saleWithCn =
                     requireNotNull(
-                        repository.getSaleById(saleId)
+                        repository.getSaleWithCreditNoteById(saleId)
                     ) {
                         "Sales Invoice could not be found."
                     }
 
-                // =====================================================
-                // COMPANY PROFILE
-                // =====================================================
-                //
-                // Company Profile is deliberately loaded as a one-time
-                // snapshot for this invoice detail state.
-                //
-                // The same snapshot will later be supplied to the
-                // Print/PDF renderer so company identity, GSTIN,
-                // bank details, UPI, terms and signatory information
-                // remain sourced from the existing Company Profile.
-                // =====================================================
+                val saleHeader = saleWithCn.sale
+                val cnNumber = saleWithCn.creditNoteNumber
 
-                val companyProfile =
+                val profile =
                     companyProfileDao.getCompanyProfile()
-
-                // =====================================================
-                // SALES ITEMS
-                // =====================================================
 
                 val items =
                     repository
                         .getSaleItems(saleId)
                         .first()
 
-                // =====================================================
-                // SALES ITEMS + PHYSICAL LENSES
-                // =====================================================
-
-                val lines =
+                val rawLines =
                     items.map { item ->
 
                         val savedLenses =
                             repository
                                 .getSaleLenses(item.id)
                                 .first()
-
-                        // =============================================
-                        // RESOLVE DISPLAY SERIAL NUMBER
-                        // =============================================
-                        //
-                        // Preserve the existing saved Sales Lens data.
-                        //
-                        // Where Inventory still contains the physical
-                        // unit, prefer its serial number.
-                        //
-                        // Product Master Serial Prefix is applied only
-                        // when the stored/base serial is numeric and
-                        // does not already contain the prefix.
-                        //
-                        // No database mutation is performed here.
-                        // This is display/export resolution only.
-                        // =============================================
 
                         val resolvedLenses =
                             savedLenses.map { lens ->
@@ -217,36 +181,62 @@ class SalesInvoiceDetailViewModel(
                                 }
                             }
 
+                        val productMaster = runCatching {
+                            productRepository.getProductById(item.productId)
+                        }.getOrNull()
+
                         SalesInvoiceDetailLine(
                             item = item,
-                            lenses = resolvedLenses
+                            lenses = resolvedLenses,
+                            hsnFromMaster = productMaster?.hsnCode ?: item.hsnCode,
+                            productModel = productMaster?.model ?: ""
                         )
                     }
 
                 // =====================================================
-                // RESULT
+                // GROUPING BY PRODUCT + MODEL + POWER + RATE + TAX (SOURCE OF TRUTH)
                 // =====================================================
+                val groupedLines = rawLines.groupBy { 
+                    "${it.item.productName}|${it.productModel}|${it.item.power}|${it.item.rate}|${it.item.discountPercent}|${it.item.gstPercent}|${it.hsnFromMaster}" 
+                }.values.map { group ->
+                    val first = group.first()
+                    val totalQty = group.sumOf { it.item.quantity }
+                    val totalTaxable = group.sumOf { it.item.taxableAmount }
+                    val totalGst = group.sumOf { it.item.gstAmount }
+                    val totalAmt = group.sumOf { it.item.totalAmount }
+                    val allLenses = group.flatMap { it.lenses }
+                    
+                    SalesInvoiceDetailLine(
+                        item = first.item.copy(
+                            quantity = totalQty,
+                            taxableAmount = totalTaxable,
+                            gstAmount = totalGst,
+                            totalAmount = totalAmt
+                        ),
+                        lenses = allLenses,
+                        hsnFromMaster = first.hsnFromMaster,
+                        productModel = first.productModel
+                    )
+                }
 
-                Triple(
-                    sale,
-                    lines,
-                    companyProfile
-                )
+                val result = object {
+                    val sale = saleHeader
+                    val creditNoteNumber = cnNumber
+                    val lines = groupedLines
+                    val companyProfile = profile
+                }
+                
+                result
 
-            }.onSuccess {
-                    (
-                        sale,
-                        lines,
-                        companyProfile
-                    ) ->
+            }.onSuccess { res ->
 
                 _uiState.value =
                     SalesInvoiceDetailUiState(
                         isLoading = false,
-                        sale = sale,
-                        lines = lines,
-                        companyProfile =
-                            companyProfile
+                        sale = res.sale,
+                        creditNoteNumber = res.creditNoteNumber,
+                        lines = res.lines,
+                        companyProfile = res.companyProfile
                     )
 
             }.onFailure { error ->

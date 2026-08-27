@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -39,6 +38,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -65,9 +65,16 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vilync.ophthalmicerp.data.entity.ProductEntity
@@ -358,7 +365,6 @@ fun SalesEntryScreen(
             .fillMaxSize()
             .background(VilyncPageBackground)
             .verticalScroll(rememberScrollState())
-            .imePadding()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -385,30 +391,16 @@ fun SalesEntryScreen(
                     selectedParty = uiState.selectedCustomer,
                     allParties = uiState.customers,
                     onPartySelected = { viewModel.selectCustomer(it) },
-                    modifier = Modifier.weight(2.2f),
-                    readOnly = uiState.isEditMode
+                    modifier = Modifier.weight(4.2f),
+                    readOnly = uiState.isEditMode,
+                    textStyle = TextStyle(fontSize = 16.sp)
                 )
 
-                Row(
-                    modifier = Modifier.weight(1.65f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = uiState.sameAsBillTo,
-                        onCheckedChange = viewModel::updateSameAsBillTo
-                    )
-
-                    Text(
-                        "Same as Bill To",
-                        fontSize = 11.sp,
-                        color = VilyncNavy
-                    )
-                }
-
-                ReadOnlyField(
-                    value = if (uiState.isEditMode) uiState.invoiceNumber else "Auto-generated",
+                InvoiceNoField(
                     label = "Invoice No. *",
-                    modifier = Modifier.weight(1.15f)
+                    prefix = if (uiState.isEditMode) "" else "Auto-generated:",
+                    number = if (uiState.isEditMode) uiState.invoiceNumber else uiState.nextInvoiceNumberPreview.ifBlank { "..." },
+                    modifier = Modifier.weight(2.9f)
                 )
 
                 ClickField(
@@ -417,7 +409,57 @@ fun SalesEntryScreen(
                     onClick = {
                         invoiceDatePicker.show()
                     },
-                    modifier = Modifier.weight(1.15f)
+                    modifier = Modifier.weight(2.9f)
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(4.2f)) {
+                    Text(
+                        "Shipping Address",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VilyncSecondaryText,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = uiState.sameAsBillTo,
+                            onCheckedChange = viewModel::updateSameAsBillTo
+                        )
+
+                        Text(
+                            "Same as Bill To",
+                            fontSize = 11.sp,
+                            color = VilyncNavy
+                        )
+                    }
+                }
+
+                CompactField(
+                    value = uiState.poNumber,
+                    onValueChange = {
+                        viewModel.updatePoNumber(
+                            it.uppercase(Locale.getDefault())
+                        )
+                    },
+                    label = "P.O. No.",
+                    modifier = Modifier.weight(2.9f),
+                    textStyle = TextStyle(fontSize = 16.sp)
+                )
+
+                ClickField(
+                    value = uiState.poDate,
+                    label = "P.O. Date 📅",
+                    onClick = {
+                        poDatePicker.show()
+                    },
+                    modifier = Modifier.weight(2.9f),
+                    textStyle = TextStyle(fontSize = 16.sp)
                 )
             }
 
@@ -506,36 +548,6 @@ fun SalesEntryScreen(
                     onValueChange = viewModel::updateShipToAddress,
                     label = "Ship To Address",
                     modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-
-                CompactField(
-                    value = uiState.poNumber,
-                    onValueChange = {
-                        viewModel.updatePoNumber(
-                            it.uppercase(Locale.getDefault())
-                        )
-                    },
-                    label = "P.O. No.",
-                    modifier = Modifier.weight(2.2f)
-                )
-
-                ClickField(
-                    value = uiState.poDate,
-                    label = "P.O. Date 📅",
-                    onClick = {
-                        poDatePicker.show()
-                    },
-                    modifier = Modifier.weight(1.15f)
-                )
-
-                Spacer(
-                    modifier = Modifier.weight(2.8f)
                 )
             }
         }
@@ -637,6 +649,27 @@ fun SalesEntryScreen(
                                 fontSize = 12.sp,
                                 color = VilyncPrimaryBlue
                             )
+                        }
+
+                        if (uiState.selectedChallanItemIds.isNotEmpty()) {
+                            Button(
+                                onClick = {
+                                    viewModel.addSelectedChallanItemsToInvoice()
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF1B5E20) // Success Green
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "ADD SELECTED TO INVOICE",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
                         }
 
                         Column(
@@ -1123,7 +1156,8 @@ private fun CompactField(
     modifier: Modifier = Modifier,
     keyboardType: KeyboardType = KeyboardType.Text,
     imeAction: ImeAction = ImeAction.Next,
-    onDone: (() -> Unit)? = null
+    onDone: (() -> Unit)? = null,
+    textStyle: TextStyle = LocalTextStyle.current
 ) {
     val focusManager = LocalFocusManager.current
     OutlinedTextField(
@@ -1131,6 +1165,7 @@ private fun CompactField(
         onValueChange = onValueChange,
         label = { Text(label, fontSize = 11.sp, maxLines = 1) },
         singleLine = true,
+        textStyle = textStyle,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
         keyboardActions = KeyboardActions(
             onNext = { focusManager.moveFocus(FocusDirection.Next) },
@@ -1149,7 +1184,8 @@ private fun ClickField(
     value: String,
     label: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    textStyle: TextStyle = LocalTextStyle.current
 ) {
     Box(modifier.clickable(onClick = onClick)) {
         OutlinedTextField(
@@ -1157,6 +1193,7 @@ private fun ClickField(
             onValueChange = {},
             readOnly = true,
             enabled = false,
+            textStyle = textStyle,
             label = { Text(label, fontSize = 11.sp) },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
@@ -1180,6 +1217,45 @@ private fun ReadOnlyField(value: String, label: String, modifier: Modifier = Mod
         singleLine = true,
         colors = compactFieldColors(),
         modifier = modifier.heightIn(min = 52.dp)
+    )
+}
+
+@Composable
+private fun InvoiceNoField(
+    label: String,
+    prefix: String,
+    number: String,
+    modifier: Modifier = Modifier
+) {
+    val annotatedString = buildAnnotatedString {
+        if (prefix.isNotBlank()) {
+            withStyle(style = SpanStyle(fontSize = 9.sp, color = VilyncSecondaryText)) {
+                append(prefix)
+            }
+            append(" ")
+        }
+        withStyle(
+            style = SpanStyle(
+                fontWeight = FontWeight.Bold,
+                color = if (prefix.isNotBlank()) Color.Red else VilyncNavy,
+                fontSize = 16.sp
+            )
+        ) {
+            append(number)
+        }
+    }
+
+    OutlinedTextField(
+        value = annotatedString.text,
+        onValueChange = {},
+        readOnly = true,
+        label = { Text(label, fontSize = 10.sp, maxLines = 1) },
+        singleLine = true,
+        colors = compactFieldColors(),
+        modifier = modifier.heightIn(min = 52.dp),
+        visualTransformation = {
+            TransformedText(annotatedString, OffsetMapping.Identity)
+        }
     )
 }
 

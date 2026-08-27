@@ -469,7 +469,7 @@ fun StockRegisterScreen(
 
 
                 // =================================================
-                // DASHBOARD - NOW ACTUALLY CLICKABLE
+                // DASHBOARD
                 // =================================================
 
                 Card(
@@ -531,7 +531,7 @@ fun StockRegisterScreen(
                 modifier =
                     Modifier.weight(1f),
                 title =
-                    "Current Units",
+                    "Warehouse Stock",
                 value =
                     totalAvailableUnits.toString(),
                 backgroundColor =
@@ -545,7 +545,7 @@ fun StockRegisterScreen(
                 modifier =
                     Modifier.weight(1f),
                 title =
-                    "Stock Rows",
+                    "Stock Variants",
                 value =
                     totalStockRows.toString(),
                 backgroundColor =
@@ -662,7 +662,7 @@ fun StockRegisterScreen(
         ) {
 
             Text(
-                text = "Current Stock",
+                text = "Reconciled Stock Register",
                 fontSize = 18.sp,
                 fontWeight =
                     FontWeight.Bold,
@@ -854,7 +854,7 @@ private fun StockRowCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(12.dp),
             verticalAlignment =
                 Alignment.CenterVertically
         ) {
@@ -865,7 +865,7 @@ private fun StockRowCard(
 
             Column(
                 modifier =
-                    Modifier.weight(2.2f)
+                    Modifier.weight(2.0f)
             ) {
 
                 Text(
@@ -874,19 +874,13 @@ private fun StockRowCard(
                             .ifBlank {
                                 "Unnamed Product"
                             },
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight =
                         FontWeight.Bold,
                     color = textPrimary,
                     maxLines = 1,
                     overflow =
                         TextOverflow.Ellipsis
-                )
-
-
-                Spacer(
-                    modifier =
-                        Modifier.height(3.dp)
                 )
 
 
@@ -928,7 +922,7 @@ private fun StockRowCard(
                             .ifBlank {
                                 "Product"
                             },
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     color =
                         textSecondary,
                     maxLines = 1,
@@ -938,26 +932,20 @@ private fun StockRowCard(
             }
 
 
-            Spacer(
-                modifier =
-                    Modifier.width(10.dp)
-            )
-
-
             // =================================================
             // POWER
             // =================================================
 
             Column(
                 modifier =
-                    Modifier.weight(0.8f),
+                    Modifier.weight(0.7f),
                 horizontalAlignment =
                     Alignment.CenterHorizontally
             ) {
 
                 Text(
                     text = "Power",
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     color =
                         textSecondary
                 )
@@ -968,7 +956,7 @@ private fun StockRowCard(
                         row.power.ifBlank {
                             "—"
                         },
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontWeight =
                         FontWeight.SemiBold,
                     color =
@@ -980,7 +968,7 @@ private fun StockRowCard(
 
             Spacer(
                 modifier =
-                    Modifier.width(8.dp)
+                    Modifier.width(4.dp)
             )
 
 
@@ -990,9 +978,9 @@ private fun StockRowCard(
 
             QuantityBox(
                 modifier =
-                    Modifier.weight(0.9f),
+                    Modifier.weight(0.7f),
                 title =
-                    "Purchased",
+                    "Purc.",
                 quantity =
                     row.purchasedQuantity,
                 backgroundColor =
@@ -1004,9 +992,31 @@ private fun StockRowCard(
 
             Spacer(
                 modifier =
-                    Modifier.width(8.dp)
+                    Modifier.width(4.dp)
             )
 
+
+            // =================================================
+            // SOLD
+            // =================================================
+
+            QuantityBox(
+                modifier =
+                    Modifier.weight(0.7f),
+                title =
+                    "Sold",
+                quantity =
+                    row.soldQuantity,
+                backgroundColor =
+                    Color(0xFFF1ECFA),
+                quantityColor =
+                    Color(0xFF7652C7)
+            )
+
+            Spacer(
+                modifier =
+                    Modifier.width(4.dp)
+            )
 
             // =================================================
             // RETURNED
@@ -1014,9 +1024,9 @@ private fun StockRowCard(
 
             QuantityBox(
                 modifier =
-                    Modifier.weight(0.9f),
+                    Modifier.weight(0.7f),
                 title =
-                    "Returned",
+                    "Ret.",
                 quantity =
                     row.purchaseReturnQuantity,
                 backgroundColor =
@@ -1028,7 +1038,7 @@ private fun StockRowCard(
 
             Spacer(
                 modifier =
-                    Modifier.width(8.dp)
+                    Modifier.width(4.dp)
             )
 
 
@@ -1038,9 +1048,9 @@ private fun StockRowCard(
 
             QuantityBox(
                 modifier =
-                    Modifier.weight(1f),
+                    Modifier.weight(0.8f),
                 title =
-                    "Available",
+                    "Avail.",
                 quantity =
                     row.availableQuantity,
                 backgroundColor =
@@ -1068,9 +1078,9 @@ private fun QuantityBox(
 
     Card(
         modifier =
-            modifier.height(58.dp),
+            modifier.height(52.dp),
         shape =
-            RoundedCornerShape(14.dp),
+            RoundedCornerShape(12.dp),
         colors =
             CardDefaults.cardColors(
                 containerColor =
@@ -1089,27 +1099,21 @@ private fun QuantityBox(
 
             Text(
                 text = title,
-                fontSize = 9.sp,
+                fontSize = 8.sp,
                 color =
                     Color(0xFF68717D),
                 maxLines = 1
             )
 
 
-            Spacer(
-                modifier =
-                    Modifier.height(2.dp)
-            )
-
-
             Text(
                 text =
-                    quantity.toString(),
-                fontSize = 17.sp,
+                    if (quantity == 0) "—" else quantity.toString(),
+                fontSize = 15.sp,
                 fontWeight =
-                    FontWeight.Bold,
+                    if (quantity == 0) FontWeight.Normal else FontWeight.Bold,
                 color =
-                    quantityColor
+                    if (quantity == 0) Color(0xFF99A4B1) else quantityColor
             )
         }
     }

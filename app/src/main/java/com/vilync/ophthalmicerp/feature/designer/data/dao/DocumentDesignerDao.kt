@@ -2,7 +2,7 @@ package com.vilync.ophthalmicerp.feature.designer.data.dao
 
 import androidx.room.*
 import com.vilync.ophthalmicerp.feature.designer.data.entity.*
-import com.vilync.ophthalmicerp.feature.designer.domain.model.DesignerDocumentType
+import com.vilync.ophthalmicerp.core.document.domain.DesignerDocumentType
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -25,6 +25,9 @@ interface DocumentDesignerDao {
 
     @Update
     suspend fun updateTemplate(template: DocumentTemplateEntity)
+
+    @Delete
+    suspend fun deleteTemplate(template: DocumentTemplateEntity)
 
     @Query("SELECT * FROM document_templates WHERE templateId = :templateId LIMIT 1")
     suspend fun getTemplateById(templateId: String): DocumentTemplateEntity?
@@ -50,10 +53,18 @@ interface DocumentDesignerDao {
 
     /**
      * Saves a new template version and updates the master template's active version reference.
+     * 
+     * Implementation ensures that the parent template record exists before inserting 
+     * the child version to satisfy Foreign Key constraints.
      */
     @Transaction
     suspend fun saveNewVersion(template: DocumentTemplateEntity, version: TemplateVersionEntity) {
-        updateTemplate(template)
+        val existing = getTemplateById(template.templateId)
+        if (existing == null) {
+            insertTemplate(template)
+        } else {
+            updateTemplate(template)
+        }
         insertVersion(version)
     }
 

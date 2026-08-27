@@ -194,6 +194,15 @@ interface SalesDao {
     )
     fun getAllSales(): Flow<List<SaleEntity>>
 
+    @Query("""
+        SELECT s.*, cn.creditNoteNumber as creditNoteNumber
+        FROM sales s
+        LEFT JOIN sales_credit_notes cn ON s.id = cn.originalSaleId AND cn.status != 'CANCELLED'
+        WHERE s.status != 'DELETED'
+        ORDER BY s.id DESC
+    """)
+    fun getAllSalesWithCreditNote(): Flow<List<SaleWithCreditNoteRow>>
+
     // =========================================================
     // SALES REGISTER - FINANCIAL YEAR
     // =========================================================
@@ -226,6 +235,17 @@ interface SalesDao {
     suspend fun getSaleById(
         saleId: Long
     ): SaleEntity?
+
+    @Query("""
+        SELECT s.*, cn.creditNoteNumber as creditNoteNumber
+        FROM sales s
+        LEFT JOIN sales_credit_notes cn ON s.id = cn.originalSaleId AND cn.status != 'CANCELLED'
+        WHERE s.id = :saleId
+        LIMIT 1
+    """)
+    suspend fun getSaleWithCreditNoteById(
+        saleId: Long
+    ): SaleWithCreditNoteRow?
 
     // =========================================================
     // SALE ITEMS
@@ -363,6 +383,9 @@ interface SalesDao {
 
     @Query("SELECT SUM(totalAmount) FROM sales WHERE customerId = :customerId AND status = 'POSTED'")
     suspend fun getTotalSaleAmountForCustomer(customerId: Long): Double?
+
+    @Query("SELECT customerId as partyId, SUM(totalAmount) as total FROM sales WHERE status = 'POSTED' GROUP BY customerId")
+    suspend fun getAllPartiesTotalSales(): List<PartyTotal>
 
     // =========================================================
     // PERIOD REPORTING QUERIES
@@ -521,6 +544,8 @@ interface SalesDao {
             CASE WHEN sales.gstSupplyType = 'INTER_STATE' THEN (sale_items.gstAmount / sale_items.quantity) ELSE 0.0 END as igst,
             (sale_items.totalAmount / sale_items.quantity) as amount, 
             sales.status,
+            sales.customerId as customerId,
+            sale_items.productId as productId,
             COALESCE(
                 NULLIF(sale_lenses.purchasePriceSnapshot, 0.0),
                 NULLIF(trace_pi.purchaseRate, 0.0),
@@ -554,4 +579,25 @@ interface SalesDao {
         startDate: String,
         endDate: String
     ): List<com.vilync.ophthalmicerp.feature.sales.reports.data.SalesTransactionDetail>
+
+    @Query("""
+        SELECT DISTINCT s.* FROM sales s
+        LEFT JOIN sale_items si ON s.id = si.saleId
+        LEFT JOIN sale_lenses sl ON si.id = sl.saleItemId
+        WHERE (:customerId IS NULL OR s.customerId = :customerId)
+          AND (s.customerName LIKE '%' || :query || '%' 
+               OR s.invoiceNumber LIKE '%' || :query || '%' 
+               OR sl.serialNumber LIKE '%' || :query || '%')
+          AND s.status = :status
+          AND (substr(s.invoiceDate, 7, 4) || '-' || substr(s.invoiceDate, 4, 2) || '-' || substr(s.invoiceDate, 1, 2)) BETWEEN :startDate AND :endDate
+        ORDER BY (substr(s.invoiceDate, 7, 4) || '-' || substr(s.invoiceDate, 4, 2) || '-' || substr(s.invoiceDate, 1, 2)) DESC, s.id DESC
+    """)
+    suspend fun getFilteredSalesForHub(query: String, status: String, startDate: String, endDate: String, customerId: Long? = null): List<SaleEntity>
+
+    // =========================================================
+    // STARTUP / BOOTSTRAP
+    // =========================================================
+
+    @Query("SELECT COUNT(*) FROM sales")
+    suspend fun getSalesCount(): Int
 }

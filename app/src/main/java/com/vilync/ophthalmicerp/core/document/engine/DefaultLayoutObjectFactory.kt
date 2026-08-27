@@ -3,9 +3,10 @@ package com.vilync.ophthalmicerp.core.document.engine
 import com.vilync.ophthalmicerp.core.document.domain.geometry.Dimensions
 import com.vilync.ophthalmicerp.core.document.domain.geometry.MeasurementUnit
 import com.vilync.ophthalmicerp.core.document.domain.geometry.Point2D
-import com.vilync.ophthalmicerp.core.document.domain.style.ResolvedStyle
-import com.vilync.ophthalmicerp.feature.designer.domain.model.JSON.LayoutObject
-import com.vilync.ophthalmicerp.feature.designer.domain.model.JSON.TemplateLayout
+import com.vilync.ophthalmicerp.core.document.domain.style.*
+import com.vilync.ophthalmicerp.core.document.domain.LayoutObject
+import com.vilync.ophthalmicerp.core.document.domain.TemplateLayout
+import java.util.Locale
 
 /**
  * Production implementation of the LayoutObjectFactory.
@@ -74,7 +75,7 @@ class DefaultLayoutObjectFactory(
             }
         }
 
-        return when (obj.type.uppercase()) {
+        return when (obj.type.uppercase(Locale.ROOT)) {
             "TEXT" -> MappingResult.Success(
                 RenderText(
                     id = obj.id,
@@ -103,7 +104,7 @@ class DefaultLayoutObjectFactory(
                     dimensions = dimensions,
                     rotation = obj.rotation,
                     style = resolvedStyle,
-                    shapeType = RenderShape.ShapeType.valueOf(obj.type.uppercase())
+                    shapeType = RenderShape.ShapeType.valueOf(obj.type.uppercase(Locale.ROOT))
                 )
             )
             "BARCODE" -> MappingResult.Success(
@@ -137,6 +138,16 @@ class DefaultLayoutObjectFactory(
                     properties = obj.properties
                 )
             )
+            "INVOICE_TABLE" -> MappingResult.Success(
+                RenderInvoiceTable(
+                    id = obj.id,
+                    position = position,
+                    dimensions = dimensions,
+                    rotation = obj.rotation,
+                    style = resolvedStyle,
+                    config = resolveTableConfig(obj.properties)
+                )
+            )
             "DYNAMIC_FIELD" -> MappingResult.Success(
                 RenderDynamicField(
                     id = obj.id,
@@ -155,6 +166,27 @@ class DefaultLayoutObjectFactory(
                 )
             )
         }
+    }
+
+    private fun resolveTableConfig(props: Map<String, Any?>): InvoiceTableConfig {
+        // Fallback to a professional standard PO 8-column set if not explicitly defined in properties
+        val columns = listOf(
+            InvoiceColumnDefinition("sno", "Sr. No.", 12.0, HorizontalAlignment.CENTER),
+            InvoiceColumnDefinition("product", "Product / Description", 58.0, HorizontalAlignment.LEFT),
+            InvoiceColumnDefinition("model", "Model / Variant", 30.0, HorizontalAlignment.LEFT),
+            InvoiceColumnDefinition("pwr", "Power", 15.0, HorizontalAlignment.CENTER),
+            InvoiceColumnDefinition("hsn", "HSN", 20.0, HorizontalAlignment.CENTER),
+            InvoiceColumnDefinition("qty", "Qty", 15.0, HorizontalAlignment.CENTER),
+            InvoiceColumnDefinition("rate", "Rate", 20.0, HorizontalAlignment.RIGHT),
+            InvoiceColumnDefinition("total", "Amount", 20.0, HorizontalAlignment.RIGHT)
+        )
+        
+        return InvoiceTableConfig(
+            columns = columns,
+            headerHeightMm = 8.0,
+            minRowHeightMm = 7.0,
+            showBorders = true
+        )
     }
 
     private sealed class MappingResult {

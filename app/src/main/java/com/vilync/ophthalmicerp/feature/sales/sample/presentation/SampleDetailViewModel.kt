@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 
 data class SampleDetailUiState(
     val isLoading: Boolean = true,
+    val isActionRunning: Boolean = false,
     val sample: SampleIssueEntity? = null,
     val items: List<SampleIssueItemEntity> = emptyList(),
     val companyProfile: CompanyProfileEntity? = null,
@@ -36,6 +37,34 @@ class SampleDetailViewModel(
     }
 
     fun refresh() = load()
+
+    fun returnToStock() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionRunning = true, errorMessage = null) }
+            runCatching {
+                repository.returnCompleteSampleToStock(sampleId)
+            }.onSuccess {
+                _uiState.update { it.copy(isActionRunning = false) }
+                load()
+            }.onFailure { e ->
+                _uiState.update { it.copy(isActionRunning = false, errorMessage = e.message) }
+            }
+        }
+    }
+
+    fun markAsEvaluated() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isActionRunning = true, errorMessage = null) }
+            runCatching {
+                repository.markCompleteSampleEvaluated(sampleId)
+            }.onSuccess {
+                _uiState.update { it.copy(isActionRunning = false) }
+                load()
+            }.onFailure { e ->
+                _uiState.update { it.copy(isActionRunning = false, errorMessage = e.message) }
+            }
+        }
+    }
 
     private fun load() {
         viewModelScope.launch {

@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -29,7 +30,12 @@ class PurchaseViewModel(
     private val partyRepository: PartyRepository,
     private val purchaseRepository: PurchaseRepository,
     private val productRepository: ProductMasterRepository? = null,
-    private val auditTrailRepository: AuditTrailRepository
+    private val auditTrailRepository: AuditTrailRepository,
+    private val numberingRepository: com.vilync.ophthalmicerp.data.repository.DocumentNumberingRepository? = null,
+    private val initialProductId: Long = 0L,
+    private val initialPower: String = "",
+    private val initialQty: Int = 0,
+    private val initialStatus: String = "POSTED"
 ) : ViewModel() {
 
 
@@ -62,8 +68,73 @@ class PurchaseViewModel(
 
 
     init {
-
         loadVendors()
+    }
+
+    private fun prefillFromShortage() {
+        viewModelScope.launch {
+            val product = productRepository?.getProductById(initialProductId) ?: return@launch
+            val allVendors = partyRepository.getAllActiveParties().first()
+            
+            val matchingVendor = allVendors.find { 
+                it.partyName.trim().equals(product.brand.trim(), ignoreCase = true) &&
+                isPurchaseVendor(it.partyType)
+            }
+
+            _uiState.update { state ->
+                var updatedState = state.copy(
+                    status = initialStatus,
+                    invoiceNumber = if (initialStatus == "ORDER") "Auto-generated on Save" else "",
+                    invoiceDate = LocalDate.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy")),
+                    receivedDate = LocalDate.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy"))
+                )
+                
+                matchingVendor?.let {
+                    updatedState = updatedState.copy(
+                        supplierId = it.id,
+                        supplierName = it.partyName,
+                        supplierGstin = it.gstin,
+                        supplierState = it.state,
+                        supplierAddress = buildSupplierAddress(it),
+                        supplierCity = it.city,
+                        supplierDistrict = it.district,
+                        supplierPinCode = it.pinCode,
+                        supplierCreditDays = it.creditDays.toString(),
+                        creditDays = it.creditDays.toString()
+                    )
+                }
+
+                val item = PurchaseItem(
+                    productId = product.id,
+                    productName = product.productName,
+                    model = product.model,
+                    category = product.category.name,
+                    hsnCode = product.hsnCode,
+                    power = initialPower,
+                    quantity = initialQty.coerceAtLeast(1),
+                    purchaseRate = product.purchasePrice,
+                    gstPercent = product.gstPercent
+                )
+                
+                updatedState.copy(items = listOf(item)).let { finalState ->
+                    // Calculate totals
+                    val gross = item.quantity * item.purchaseRate
+                    val discount = 0.0
+                    val taxable = gross - discount
+                    val tax = taxable * (item.gstPercent / 100.0)
+                    val total = taxable + tax
+                    
+                    finalState.copy(
+                        grossAmount = gross,
+                        taxableAmount = taxable,
+                        taxAmount = tax,
+                        netAmount = total,
+                        dueAmount = total,
+                        isDirty = true
+                    )
+                }
+            }
+        }
     }
 
 
@@ -75,10 +146,9 @@ class PurchaseViewModel(
 
         viewModelScope.launch {
 
-            _uiState.value =
-                _uiState.value.copy(
-                    isLoadingSuppliers = true
-                )
+            _uiState.update { it.copy(
+                isLoadingSuppliers = true
+            )}
 
             try {
 
@@ -99,24 +169,22 @@ class PurchaseViewModel(
                                 it.partyName.lowercase()
                             }
 
-                        _uiState.value =
-                            _uiState.value.copy(
-                                isLoadingSuppliers = false
-                            )
+                        _uiState.update { it.copy(
+                            isLoadingSuppliers = false
+                        )}
                     }
 
             } catch (exception: Exception) {
 
-                _uiState.value =
-                    _uiState.value.copy(
-                        isLoadingSuppliers = false,
-                        errorMessage =
-                            exception.message
-                                ?.takeIf {
-                                    it.isNotBlank()
-                                }
-                                ?: "Unable to load vendors."
-                    )
+                _uiState.update { it.copy(
+                    isLoadingSuppliers = false,
+                    errorMessage =
+                        exception.message
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?: "Unable to load vendors."
+                )}
             }
         }
     }
@@ -164,11 +232,10 @@ class PurchaseViewModel(
             )
         ) {
 
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        "Please select a Vendor or Customer & Vendor party."
-                )
+            _uiState.update { it.copy(
+                errorMessage =
+                    "Please select a Vendor or Customer & Vendor party."
+            )}
 
             return
         }
@@ -180,7 +247,7 @@ class PurchaseViewModel(
             )
 
 
-        val creditDays =
+        val creditDaysStr =
             party.creditDays
                 .toString()
                 .takeIf {
@@ -189,42 +256,41 @@ class PurchaseViewModel(
                 .orEmpty()
 
 
-        _uiState.value =
-            _uiState.value.copy(
+        _uiState.update { it.copy(
 
-                supplierId =
-                    party.id,
+            supplierId =
+                party.id,
 
-                supplierName =
-                    party.partyName,
+            supplierName =
+                party.partyName,
 
-                supplierAddress =
-                    fullAddress,
+            supplierAddress =
+                fullAddress,
 
-                supplierCity =
-                    party.city,
+            supplierCity =
+                party.city,
 
-                supplierDistrict =
-                    party.district,
+            supplierDistrict =
+                party.district,
 
-                supplierState =
-                    party.state,
+            supplierState =
+                party.state,
 
-                supplierPinCode =
-                    party.pinCode,
+            supplierPinCode =
+                party.pinCode,
 
-                supplierGstin =
-                    party.gstin,
+            supplierGstin =
+                party.gstin,
 
-                supplierCreditDays =
-                    creditDays,
+            supplierCreditDays =
+                creditDaysStr,
 
-                creditDays =
-                    creditDays,
+            creditDays =
+                creditDaysStr,
 
-                errorMessage =
-                    null
-            )
+            errorMessage =
+                null
+        )}
 
         checkInvoiceDuplicateDebounced()
 
@@ -239,31 +305,30 @@ class PurchaseViewModel(
 
     fun clearVendor() {
 
-        _uiState.value =
-            _uiState.value.copy(
+        _uiState.update { it.copy(
 
-                supplierId = null,
+            supplierId = null,
 
-                supplierName = "",
+            supplierName = "",
 
-                supplierAddress = "",
+            supplierAddress = "",
 
-                supplierCity = "",
+            supplierCity = "",
 
-                supplierDistrict = "",
+            supplierDistrict = "",
 
-                supplierState = "",
+            supplierState = "",
 
-                supplierPinCode = "",
+            supplierPinCode = "",
 
-                supplierGstin = "",
+            supplierGstin = "",
 
-                supplierCreditDays = "",
+            supplierCreditDays = "",
 
-                creditDays = "",
+            creditDays = "",
 
-                errorMessage = null
-            )
+            errorMessage = null
+        )}
 
 
         markPurchaseChanged()
@@ -283,12 +348,11 @@ class PurchaseViewModel(
         value: String
     ) {
 
-        _uiState.value =
-            _uiState.value.copy(
-                supplierName = value,
-                supplierId = null,
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            supplierName = value,
+            supplierId = null,
+            errorMessage = null
+        )}
 
 
         markPurchaseChanged()
@@ -303,15 +367,14 @@ class PurchaseViewModel(
         value: String
     ) {
 
-        _uiState.value =
-            _uiState.value.copy(
-                invoiceNumber = value,
-                isInvoiceDuplicate = false,
-                isCheckingInvoiceDuplicate = false,
-                invoiceDuplicateMessage = null,
-                errorMessage = null,
-                isSavedSuccessfully = false
-            )
+        _uiState.update { it.copy(
+            invoiceNumber = value,
+            isInvoiceDuplicate = false,
+            isCheckingInvoiceDuplicate = false,
+            invoiceDuplicateMessage = null,
+            errorMessage = null,
+            isSavedSuccessfully = false
+        )}
 
         checkInvoiceDuplicateDebounced()
 
@@ -328,12 +391,10 @@ class PurchaseViewModel(
         value: String
     ) {
 
-        _uiState.value =
-            _uiState.value.copy(
-                invoiceDate = value,
-
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            invoiceDate = value,
+            errorMessage = null
+        )}
 
 
         markPurchaseChanged()
@@ -348,11 +409,10 @@ class PurchaseViewModel(
         value: String
     ) {
 
-        _uiState.value =
-            _uiState.value.copy(
-                receivedDate = value,
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            receivedDate = value,
+            errorMessage = null
+        )}
 
 
         markPurchaseChanged()
@@ -367,11 +427,10 @@ class PurchaseViewModel(
         value: String
     ) {
 
-        _uiState.value =
-            _uiState.value.copy(
-                purchaseType = value,
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            purchaseType = value,
+            errorMessage = null
+        )}
 
 
         markPurchaseChanged()
@@ -386,11 +445,10 @@ class PurchaseViewModel(
         value: String
     ) {
 
-        _uiState.value =
-            _uiState.value.copy(
-                paymentType = value,
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            paymentType = value,
+            errorMessage = null
+        )}
 
 
         markPurchaseChanged()
@@ -410,11 +468,10 @@ class PurchaseViewModel(
                 it.isDigit()
             }
 
-        _uiState.value =
-            _uiState.value.copy(
-                creditDays = cleanValue,
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            creditDays = cleanValue,
+            errorMessage = null
+        )}
 
 
         markPurchaseChanged()
@@ -429,11 +486,10 @@ class PurchaseViewModel(
         value: String
     ) {
 
-        _uiState.value =
-            _uiState.value.copy(
-                reference = value,
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            reference = value,
+            errorMessage = null
+        )}
 
 
         markPurchaseChanged()
@@ -460,12 +516,11 @@ class PurchaseViewModel(
             invoiceNumber.isBlank()
         ) {
 
-            _uiState.value =
-                _uiState.value.copy(
-                    isInvoiceDuplicate = false,
-                    isCheckingInvoiceDuplicate = false,
-                    invoiceDuplicateMessage = null
-                )
+            _uiState.update { it.copy(
+                isInvoiceDuplicate = false,
+                isCheckingInvoiceDuplicate = false,
+                invoiceDuplicateMessage = null
+            )}
 
             return
         }
@@ -473,12 +528,11 @@ class PurchaseViewModel(
         invoiceDuplicateCheckJob =
             viewModelScope.launch {
 
-                _uiState.value =
-                    _uiState.value.copy(
-                        isCheckingInvoiceDuplicate = true,
-                        isInvoiceDuplicate = false,
-                        invoiceDuplicateMessage = null
-                    )
+                _uiState.update { it.copy(
+                    isCheckingInvoiceDuplicate = true,
+                    isInvoiceDuplicate = false,
+                    invoiceDuplicateMessage = null
+                )}
 
                 delay(350)
 
@@ -507,35 +561,31 @@ class PurchaseViewModel(
                                 )
                         }
 
-                    val latestState =
-                        _uiState.value
-
-
-                    if (
-                        latestState.supplierId != supplierId ||
-                        latestState.invoiceNumber.trim() != invoiceNumber
-                    ) {
-                        return@launch
+                    _uiState.update { latestState ->
+                        if (
+                            latestState.supplierId != supplierId ||
+                            latestState.invoiceNumber.trim() != invoiceNumber
+                        ) {
+                            latestState
+                        } else {
+                            latestState.copy(
+                                isCheckingInvoiceDuplicate = false,
+                                isInvoiceDuplicate = exists,
+                                invoiceDuplicateMessage =
+                                    if (exists) {
+                                        "Purchase Invoice No. already exists for this vendor."
+                                    } else {
+                                        null
+                                    }
+                            )
+                        }
                     }
-
-                    _uiState.value =
-                        latestState.copy(
-                            isCheckingInvoiceDuplicate = false,
-                            isInvoiceDuplicate = exists,
-                            invoiceDuplicateMessage =
-                                if (exists) {
-                                    "Purchase Invoice No. already exists for this vendor."
-                                } else {
-                                    null
-                                }
-                        )
 
                 } catch (_: Exception) {
 
-                    _uiState.value =
-                        _uiState.value.copy(
-                            isCheckingInvoiceDuplicate = false
-                        )
+                    _uiState.update { it.copy(
+                        isCheckingInvoiceDuplicate = false
+                    )}
                 }
             }
     }
@@ -545,23 +595,21 @@ class PurchaseViewModel(
 
         if (_uiState.value.isCheckingInvoiceDuplicate) {
 
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        "Please wait while Invoice No. is being checked."
-                )
+            _uiState.update { it.copy(
+                errorMessage =
+                    "Please wait while Invoice No. is being checked."
+            )}
 
             return false
         }
 
         if (_uiState.value.isInvoiceDuplicate) {
 
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        _uiState.value.invoiceDuplicateMessage
-                            ?: "Purchase Invoice No. already exists for this vendor."
-                )
+            _uiState.update { it.copy(
+                errorMessage =
+                    it.invoiceDuplicateMessage
+                        ?: "Purchase Invoice No. already exists for this vendor."
+            )}
 
             return false
         }
@@ -575,11 +623,10 @@ class PurchaseViewModel(
             currentState.supplierName.isBlank()
         ) {
 
-            _uiState.value =
-                currentState.copy(
-                    isHeaderConfirmed = false,
-                    errorMessage = "Please select Vendor."
-                )
+            _uiState.update { it.copy(
+                isHeaderConfirmed = false,
+                errorMessage = "Please select Vendor."
+            )}
 
             return false
         }
@@ -590,11 +637,10 @@ class PurchaseViewModel(
                 .isBlank()
         ) {
 
-            _uiState.value =
-                currentState.copy(
-                    isHeaderConfirmed = false,
-                    errorMessage = "Please enter Supplier Invoice Number."
-                )
+            _uiState.update { it.copy(
+                isHeaderConfirmed = false,
+                errorMessage = "Please enter Supplier Invoice Number."
+            )}
 
             return false
         }
@@ -605,20 +651,18 @@ class PurchaseViewModel(
                 .isBlank()
         ) {
 
-            _uiState.value =
-                currentState.copy(
-                    isHeaderConfirmed = false,
-                    errorMessage = "Please select Invoice Date."
-                )
+            _uiState.update { it.copy(
+                isHeaderConfirmed = false,
+                errorMessage = "Please select Invoice Date."
+            )}
 
             return false
         }
 
-        _uiState.value =
-            currentState.copy(
-                isHeaderConfirmed = true,
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            isHeaderConfirmed = true,
+            errorMessage = null
+        )}
 
         return true
     }
@@ -630,11 +674,10 @@ class PurchaseViewModel(
 
     fun editPurchaseHeader() {
 
-        _uiState.value =
-            _uiState.value.copy(
-                isHeaderConfirmed = false,
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            isHeaderConfirmed = false,
+            errorMessage = null
+        )}
     }
 
 
@@ -646,10 +689,9 @@ class PurchaseViewModel(
         value: Double
     ) {
 
-        _uiState.value =
-            _uiState.value.copy(
-                adjustmentAmount = value
-            )
+        _uiState.update { it.copy(
+            adjustmentAmount = value
+        )}
 
         recalculateTotals()
 
@@ -679,10 +721,9 @@ class PurchaseViewModel(
                 value
             }
 
-        _uiState.value =
-            _uiState.value.copy(
-                paidAmount = safeValue
-            )
+        _uiState.update { it.copy(
+            paidAmount = safeValue
+        )}
 
         recalculateTotals()
 
@@ -706,16 +747,10 @@ class PurchaseViewModel(
          * unique Serial Number.
          */
 
-        val updatedItems =
-            _uiState.value.items +
-                    item
-
-
-        _uiState.value =
-            _uiState.value.copy(
-                items = updatedItems,
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            items = it.items + item,
+            errorMessage = null
+        )}
 
 
         recalculateTotals()
@@ -733,29 +768,21 @@ class PurchaseViewModel(
         index: Int
     ) {
 
-        val currentItems =
-            _uiState.value.items
-                .toMutableList()
-
-
-        if (
-            index in currentItems.indices
-        ) {
-
-            currentItems.removeAt(
-                index
-            )
-
-
-            _uiState.value =
-                _uiState.value.copy(
+        _uiState.update { state ->
+            val currentItems = state.items.toMutableList()
+            if (index in currentItems.indices) {
+                currentItems.removeAt(index)
+                state.copy(
                     items = currentItems,
                     errorMessage = null
                 )
-
-
-            recalculateTotals()
+            } else {
+                state
+            }
         }
+
+
+        recalculateTotals()
 
 
         markPurchaseChanged()
@@ -771,35 +798,29 @@ class PurchaseViewModel(
         item: PurchaseItem
     ): Boolean {
 
-        val currentItems =
-            _uiState.value.items
-                .toMutableList()
-
-        if (index !in currentItems.indices) {
-
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        "Unable to update Purchase Item."
+        var success = false
+        _uiState.update { state ->
+            val currentItems = state.items.toMutableList()
+            if (index in currentItems.indices) {
+                currentItems[index] = item
+                success = true
+                state.copy(
+                    items = currentItems,
+                    errorMessage = null
                 )
-
-            return false
+            } else {
+                state.copy(
+                    errorMessage = "Unable to update Purchase Item."
+                )
+            }
         }
 
-        currentItems[index] =
-            item
+        if (success) {
+            recalculateTotals()
+            markPurchaseChanged()
+        }
 
-        _uiState.value =
-            _uiState.value.copy(
-                items = currentItems,
-                errorMessage = null
-            )
-
-        recalculateTotals()
-
-        markPurchaseChanged()
-
-        return true
+        return success
     }
 
 
@@ -891,11 +912,10 @@ class PurchaseViewModel(
             )
         ) {
 
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        "Duplicate Serial Number found in current Purchase."
-                )
+            _uiState.update { it.copy(
+                errorMessage =
+                    "Duplicate Serial Number found in current Purchase."
+            )}
 
             return false
         }
@@ -922,11 +942,10 @@ class PurchaseViewModel(
             index !in _uiState.value.items.indices
         ) {
 
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        "Unable to update Purchase Item."
-                )
+            _uiState.update { it.copy(
+                errorMessage =
+                    "Unable to update Purchase Item."
+            )}
 
             return false
         }
@@ -939,11 +958,10 @@ class PurchaseViewModel(
             )
         ) {
 
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        "Duplicate Serial Number found in current Purchase."
-                )
+            _uiState.update { it.copy(
+                errorMessage =
+                    "Duplicate Serial Number found in current Purchase."
+            )}
 
             return false
         }
@@ -962,117 +980,39 @@ class PurchaseViewModel(
 
     private fun recalculateTotals() {
 
-        val currentState =
-            _uiState.value
+        _uiState.update { state ->
+            var grossAmount = 0.0
+            var discountAmount = 0.0
+            var taxableAmount = 0.0
+            var taxAmount = 0.0
 
+            state.items.forEach { item ->
+                val itemGross = item.quantity * item.purchaseRate
+                val itemDiscount = itemGross * (item.discountPercent / 100.0)
+                val itemTaxable = itemGross - itemDiscount
+                val itemTax = itemTaxable * (item.gstPercent / 100.0)
 
-        var grossAmount =
-            0.0
+                grossAmount += itemGross
+                discountAmount += itemDiscount
+                taxableAmount += itemTaxable
+                taxAmount += itemTax
+            }
 
-        var discountAmount =
-            0.0
+            val amountBeforeRoundOff = taxableAmount + taxAmount + state.adjustmentAmount
+            val roundedNetAmount = kotlin.math.round(amountBeforeRoundOff)
+            val roundOffAmount = roundedNetAmount - amountBeforeRoundOff
+            val dueAmount = (roundedNetAmount - state.paidAmount).coerceAtLeast(0.0)
 
-        var taxableAmount =
-            0.0
-
-        var taxAmount =
-            0.0
-
-
-        currentState.items.forEach { item ->
-
-            val itemGross =
-                item.quantity *
-                        item.purchaseRate
-
-
-            val itemDiscount =
-                itemGross *
-                        (
-                                item.discountPercent /
-                                        100.0
-                                )
-
-
-            val itemTaxable =
-                itemGross -
-                        itemDiscount
-
-
-            val itemTax =
-                itemTaxable *
-                        (
-                                item.gstPercent /
-                                        100.0
-                                )
-
-
-
-            grossAmount +=
-                itemGross
-
-            discountAmount +=
-                itemDiscount
-
-            taxableAmount +=
-                itemTaxable
-
-            taxAmount +=
-                itemTax
+            state.copy(
+                grossAmount = grossAmount,
+                discountAmount = discountAmount,
+                taxableAmount = taxableAmount,
+                taxAmount = taxAmount,
+                roundOffAmount = roundOffAmount,
+                netAmount = roundedNetAmount,
+                dueAmount = dueAmount
+            )
         }
-
-
-        val amountBeforeRoundOff =
-            taxableAmount +
-                    taxAmount +
-                    currentState.adjustmentAmount
-
-
-        val roundedNetAmount =
-            kotlin.math.round(
-                amountBeforeRoundOff
-            )
-
-
-        val roundOffAmount =
-            roundedNetAmount -
-                    amountBeforeRoundOff
-
-
-        val dueAmount =
-            (
-                    roundedNetAmount -
-                            currentState.paidAmount
-                    )
-                .coerceAtLeast(
-                    0.0
-                )
-
-
-        _uiState.value =
-            currentState.copy(
-
-                grossAmount =
-                    grossAmount,
-
-                discountAmount =
-                    discountAmount,
-
-                taxableAmount =
-                    taxableAmount,
-
-                taxAmount =
-                    taxAmount,
-
-                roundOffAmount =
-                    roundOffAmount,
-
-                netAmount =
-                    roundedNetAmount,
-
-                dueAmount =
-                    dueAmount
-            )
     }
 
 
@@ -1085,33 +1025,56 @@ class PurchaseViewModel(
     ) {
 
         if (purchaseId <= 0L) {
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage = "Invalid Purchase ID."
-                )
+            _uiState.update { it.copy(
+                errorMessage = "Invalid Purchase ID."
+            )}
             return
         }
+
+        // =====================================================
+        // SESSION PROTECTION GUARD
+        // =====================================================
+        //
+        // If we are already in edit mode for this specific
+        // purchase, and it's not currently loading, we skip
+        // the reload. This prevents the state from being
+        // reset to database values when returning from
+        // the Add Product flow.
+        // =====================================================
+
+        val currentState = _uiState.value
+
+        if (
+            currentState.isEditMode &&
+            currentState.editingPurchaseId == purchaseId &&
+            !currentState.isLoadingPurchaseForEdit &&
+            currentState.items.isNotEmpty()
+        ) {
+            return
+        }
+
 
         val repository =
             productRepository
 
         if (repository == null) {
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        "Product repository is not connected for Purchase Edit."
-                )
+            _uiState.update { it.copy(
+                errorMessage =
+                    "Product repository is not connected for Purchase Edit."
+            )}
             return
         }
 
         viewModelScope.launch {
 
-            _uiState.value =
-                PurchaseUiState(
+            _uiState.update { 
+                it.copy(
                     isEditMode = true,
                     editingPurchaseId = purchaseId,
-                    isLoadingPurchaseForEdit = true
+                    isLoadingPurchaseForEdit = true,
+                    errorMessage = null
                 )
+            }
 
             try {
 
@@ -1123,14 +1086,14 @@ class PurchaseViewModel(
 
                 if (purchase == null) {
 
-                    _uiState.value =
-                        PurchaseUiState(
+                    _uiState.update { 
+                        it.copy(
                             isEditMode = true,
                             editingPurchaseId = purchaseId,
                             isLoadingPurchaseForEdit = false,
-                            errorMessage =
-                                "Purchase invoice not found."
+                            errorMessage = "Purchase invoice not found."
                         )
+                    }
 
                     return@launch
                 }
@@ -1246,8 +1209,8 @@ class PurchaseViewModel(
                         }
                         .orEmpty()
 
-                _uiState.value =
-                    PurchaseUiState(
+                _uiState.update { lastState ->
+                    lastState.copy(
                         isEditMode = true,
                         editingPurchaseId = purchase.id,
                         isLoadingPurchaseForEdit = false,
@@ -1330,9 +1293,10 @@ class PurchaseViewModel(
                         isSaved = true,
                         isDirty = false,
                         errorMessage = null,
-                        isSavedSuccessfully = false
-
+                        isSavedSuccessfully = false,
+                        status = purchase.status // IMPORTANT: Load status from DB
                     )
+                }
 
                 /*
                  * Recalculate from item rows so Purchase Entry summary is
@@ -1344,16 +1308,15 @@ class PurchaseViewModel(
 
             } catch (exception: Exception) {
 
-                _uiState.value =
-                    _uiState.value.copy(
-                        isLoadingPurchaseForEdit = false,
-                        errorMessage =
-                            exception.message
-                                ?.takeIf {
-                                    it.isNotBlank()
-                                }
-                                ?: "Unable to load Purchase for editing."
-                    )
+                _uiState.update { it.copy(
+                    isLoadingPurchaseForEdit = false,
+                    errorMessage =
+                        exception.message
+                            ?.takeIf {
+                                it.isNotBlank()
+                            }
+                            ?: "Unable to load Purchase for editing."
+                )}
             }
         }
     }
@@ -1372,8 +1335,7 @@ class PurchaseViewModel(
 
     fun startNewPurchase() {
 
-        _uiState.value =
-            PurchaseUiState()
+        _uiState.update { PurchaseUiState() }
 
         loadVendors()
     }
@@ -1384,32 +1346,33 @@ class PurchaseViewModel(
     // =========================================================
 
     fun savePurchase() {
+        android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: savePurchase() ENTERED")
 
         val saveState = _uiState.value
 
-        if (saveState.isSaving || (saveState.isSaved && !saveState.isDirty)) {
+        if (saveState.isSaving) {
+            android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Early return - Already saving")
+            return
+        }
+        if (saveState.isSaved && !saveState.isDirty) {
+            android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Early return - Already saved and not dirty")
             return
         }
 
         if (saveState.isCheckingInvoiceDuplicate) {
-
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        "Please wait while Invoice No. is being checked."
-                )
+            android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Early return - Duplicate check in progress")
+            _uiState.update { it.copy(
+                errorMessage = "Please wait while Invoice No. is being checked."
+            )}
 
             return
         }
 
         if (_uiState.value.isInvoiceDuplicate) {
-
-            _uiState.value =
-                _uiState.value.copy(
-                    errorMessage =
-                        _uiState.value.invoiceDuplicateMessage
-                            ?: "Purchase Invoice No. already exists for this vendor."
-                )
+            android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Early return - Invoice is duplicate")
+            _uiState.update { it.copy(
+                errorMessage = it.invoiceDuplicateMessage ?: "Purchase Invoice No. already exists for this vendor."
+            )}
 
             return
         }
@@ -1426,13 +1389,12 @@ class PurchaseViewModel(
             supplierId <= 0L ||
             currentState.supplierName.isBlank()
         ) {
-
-            _uiState.value =
-                currentState.copy(
-                    isSaving = false,
-                    isSavedSuccessfully = false,
-                    errorMessage = "Please select Vendor."
-                )
+            android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Invalid Vendor (id=$supplierId, name=${currentState.supplierName})")
+            _uiState.update { it.copy(
+                isSaving = false,
+                isSavedSuccessfully = false,
+                errorMessage = "Please select Vendor."
+            )}
 
             return
         }
@@ -1443,25 +1405,23 @@ class PurchaseViewModel(
                 .uppercase()
 
         if (normalizedInvoiceNumber.isBlank()) {
-
-            _uiState.value =
-                currentState.copy(
-                    isSaving = false,
-                    isSavedSuccessfully = false,
-                    errorMessage = "Please enter Supplier Invoice Number."
-                )
+            android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Invoice Number blank")
+            _uiState.update { it.copy(
+                isSaving = false,
+                isSavedSuccessfully = false,
+                errorMessage = "Please enter Supplier Invoice Number."
+            )}
 
             return
         }
 
         if (currentState.invoiceDate.trim().isBlank()) {
-
-            _uiState.value =
-                currentState.copy(
-                    isSaving = false,
-                    isSavedSuccessfully = false,
-                    errorMessage = "Please select Invoice Date."
-                )
+            android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Invoice Date blank")
+            _uiState.update { it.copy(
+                isSaving = false,
+                isSavedSuccessfully = false,
+                errorMessage = "Please select Invoice Date."
+            )}
 
             return
         }
@@ -1478,14 +1438,13 @@ class PurchaseViewModel(
                         .ofPattern("dd-MM-uuuu")
                         .withResolverStyle(ResolverStyle.STRICT)
                 )
-            } catch (_: Exception) {
-                _uiState.value =
-                    currentState.copy(
-                        isSaving = false,
-                        isSavedSuccessfully = false,
-                        errorMessage =
-                            "Invalid Invoice Date. Please use DD-MM-YYYY."
-                    )
+            } catch (e: Exception) {
+                android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Date Parse Error: ${e.message}")
+                _uiState.update { it.copy(
+                    isSaving = false,
+                    isSavedSuccessfully = false,
+                    errorMessage = "Invalid Invoice Date. Please use DD-MM-YYYY."
+                )}
                 return
             }
 
@@ -1496,23 +1455,25 @@ class PurchaseViewModel(
 
         val activeFinancialYear =
             FinancialYearManager.activeFinancialYear.value
+        
+        android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: FY check - Transaction FY: ${transactionFinancialYear.displayName}, Active FY: ${activeFinancialYear.displayName}")
 
         if (
 
             transactionFinancialYear.startYear !=
             activeFinancialYear.startYear
         ) {
-            _uiState.value =
-                currentState.copy(
-                    isSaving = false,
-                    isSavedSuccessfully = false,
-                    errorMessage =
-                        "Invoice Date belongs to FY " +
-                                transactionFinancialYear.displayName +
-                                ". Please change Working Financial Year to " +
-                                transactionFinancialYear.displayName +
-                                " from Settings before saving this purchase."
-                )
+            android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - FY Mismatch")
+            _uiState.update { it.copy(
+                isSaving = false,
+                isSavedSuccessfully = false,
+                errorMessage =
+                    "Invoice Date belongs to FY " +
+                            transactionFinancialYear.displayName +
+                            ". Please change Working Financial Year to " +
+                            transactionFinancialYear.displayName +
+                            " from Settings before saving this purchase."
+            )}
             return
         }
 
@@ -1521,52 +1482,48 @@ class PurchaseViewModel(
 
 
         if (currentState.items.isEmpty()) {
-
-            _uiState.value =
-                currentState.copy(
-                    isSaving = false,
-                    isSavedSuccessfully = false,
-                    errorMessage = "Please add at least one Product."
-                )
+            android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Items list empty")
+            _uiState.update { it.copy(
+                isSaving = false,
+                isSavedSuccessfully = false,
+                errorMessage = "Please add at least one Product."
+            )}
 
             return
         }
 
         // Final safety validation before persistence.
-        currentState.items.forEach { item ->
+        currentState.items.forEachIndexed { index, item ->
 
             if (item.productId <= 0L) {
-
-                _uiState.value =
-                    currentState.copy(
-                        isSaving = false,
-                        isSavedSuccessfully = false,
-                        errorMessage = "Invalid Product found in Purchase."
-                    )
+                android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Item at $index has invalid Product ID")
+                _uiState.update { it.copy(
+                    isSaving = false,
+                    isSavedSuccessfully = false,
+                    errorMessage = "Invalid Product found in Purchase."
+                )}
 
                 return
             }
 
             if (item.quantity <= 0) {
-
-                _uiState.value =
-                    currentState.copy(
-                        isSaving = false,
-                        isSavedSuccessfully = false,
-                        errorMessage = "Product quantity must be greater than zero."
-                    )
+                android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Item at $index has invalid quantity (${item.quantity})")
+                _uiState.update { it.copy(
+                    isSaving = false,
+                    isSavedSuccessfully = false,
+                    errorMessage = "Product quantity must be greater than zero."
+                )}
 
                 return
             }
 
             if (item.purchaseRate < 0.0) {
-
-                _uiState.value =
-                    currentState.copy(
-                        isSaving = false,
-                        isSavedSuccessfully = false,
-                        errorMessage = "Purchase rate cannot be negative."
-                    )
+                android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Item at $index has negative rate")
+                _uiState.update { it.copy(
+                    isSaving = false,
+                    isSavedSuccessfully = false,
+                    errorMessage = "Purchase rate cannot be negative."
+                )}
 
                 return
             }
@@ -1575,13 +1532,12 @@ class PurchaseViewModel(
                 item.discountPercent < 0.0 ||
                 item.discountPercent > 100.0
             ) {
-
-                _uiState.value =
-                    currentState.copy(
-                        isSaving = false,
-                        isSavedSuccessfully = false,
-                        errorMessage = "Discount must be between 0 and 100."
-                    )
+                android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Item at $index has invalid discount")
+                _uiState.update { it.copy(
+                    isSaving = false,
+                    isSavedSuccessfully = false,
+                    errorMessage = "Discount must be between 0 and 100."
+                )}
 
                 return
             }
@@ -1590,13 +1546,12 @@ class PurchaseViewModel(
                 item.gstPercent < 0.0 ||
                 item.gstPercent > 100.0
             ) {
-
-                _uiState.value =
-                    currentState.copy(
-                        isSaving = false,
-                        isSavedSuccessfully = false,
-                        errorMessage = "GST must be between 0 and 100."
-                    )
+                android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Item at $index has invalid GST")
+                _uiState.update { it.copy(
+                    isSaving = false,
+                    isSavedSuccessfully = false,
+                    errorMessage = "GST must be between 0 and 100."
+                )}
 
                 return
             }
@@ -1607,55 +1562,48 @@ class PurchaseViewModel(
                     ignoreCase = true
                 )
 
-            if (isIol) {
-
-                if (item.lensDetails.size != item.quantity) {
-
-                    _uiState.value =
-                        currentState.copy(
+                if (isIol) {
+                    if (item.lensDetails.size != item.quantity) {
+                        android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - IOL Item at $index: Lens Detail count (${item.lensDetails.size}) != quantity (${item.quantity})")
+                        _uiState.update { it.copy(
                             isSaving = false,
                             isSavedSuccessfully = false,
-                            errorMessage =
-                                "IOL Quantity and Lens Detail count must be equal."
-                        )
+                            errorMessage = "IOL Quantity and Lens Detail count must be equal."
+                        )}
 
-                    return
-                }
-
-                if (
-                    item.lensDetails.any {
-                        it.serialNumber.trim().isBlank()
+                        return
                     }
-                ) {
 
-                    _uiState.value =
-                        currentState.copy(
+                    if (
+                        item.lensDetails.any {
+                            it.serialNumber.trim().isBlank()
+                        }
+                    ) {
+                        android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - IOL Item at $index has blank serial")
+                        _uiState.update { it.copy(
                             isSaving = false,
                             isSavedSuccessfully = false,
-                            errorMessage =
-                                "Serial Number cannot be blank."
-                        )
+                            errorMessage = "Serial Number cannot be blank."
+                        )}
 
-                    return
-                }
-
-                if (
-                    item.lensDetails.any {
-                        it.expiryDate.trim().isBlank()
+                        return
                     }
-                ) {
 
-                    _uiState.value =
-                        currentState.copy(
+                    if (
+                        item.lensDetails.any {
+                            it.expiryDate.trim().isBlank()
+                        }
+                    ) {
+                        android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - IOL Item at $index has blank expiry")
+                        _uiState.update { it.copy(
                             isSaving = false,
                             isSavedSuccessfully = false,
-                            errorMessage =
-                                "Expiry cannot be blank."
-                        )
+                            errorMessage = "Expiry cannot be blank."
+                        )}
 
-                    return
+                        return
+                    }
                 }
-            }
         }
 
         // Cross-item serial duplication check.
@@ -1677,32 +1625,33 @@ class PurchaseViewModel(
             allSerialNumbers.size !=
             allSerialNumbers.toSet().size
         ) {
-
-            _uiState.value =
-                currentState.copy(
-                    isSaving = false,
-                    isSavedSuccessfully = false,
-                    errorMessage =
-                        "Duplicate Serial Number found in current Purchase."
-                )
+            android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Validation FAIL - Cross-item serial duplication detected")
+            _uiState.update { it.copy(
+                isSaving = false,
+                isSavedSuccessfully = false,
+                errorMessage = "Duplicate Serial Number found in current Purchase."
+            )}
 
             return
         }
 
-        _uiState.value =
-            currentState.copy(
-                isSaving = true,
-                isSavedSuccessfully = false,
-                errorMessage = null
-            )
+        android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: All UI validations PASSED. Starting launch block.")
+
+        _uiState.update { it.copy(
+            isSaving = true,
+            isSavedSuccessfully = false,
+            errorMessage = null
+        )}
 
         viewModelScope.launch {
 
             try {
+                val finalInvoiceNumber = normalizedInvoiceNumber
 
                 val editPurchaseId =
                     currentState.editingPurchaseId
 
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Database check - Duplicate Invoice check. id=$supplierId, invoice=$normalizedInvoiceNumber")
                 val duplicateExists =
                     if (
                         currentState.isEditMode &&
@@ -1712,29 +1661,24 @@ class PurchaseViewModel(
                         purchaseRepository
                             .purchaseInvoiceExistsExcludingPurchase(
                                 supplierId = supplierId,
-                                invoiceNumber =
-                                    normalizedInvoiceNumber,
-                                excludePurchaseId =
-                                    editPurchaseId
+                                invoiceNumber = normalizedInvoiceNumber,
+                                excludePurchaseId = editPurchaseId
                             )
                     } else {
                         purchaseRepository
                             .purchaseInvoiceExists(
                                 supplierId = supplierId,
-                                invoiceNumber =
-                                    normalizedInvoiceNumber
+                                invoiceNumber = normalizedInvoiceNumber
                             )
                     }
 
                 if (duplicateExists) {
-
-                    _uiState.value =
-                        _uiState.value.copy(
-                            isSaving = false,
-                            isSavedSuccessfully = false,
-                            errorMessage =
-                                "Purchase Invoice No. already exists for this vendor."
-                        )
+                    android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Database FAIL - Invoice already exists")
+                    _uiState.update { it.copy(
+                        isSaving = false,
+                        isSavedSuccessfully = false,
+                        errorMessage = "Purchase Invoice No. already exists for this vendor."
+                    )}
 
                     return@launch
                 }
@@ -1742,178 +1686,77 @@ class PurchaseViewModel(
                 val stateForSave =
                     _uiState.value
 
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Creating PurchaseEntity and items list")
                 val purchaseEntity =
                     PurchaseEntity(
-                        id =
-                            if (stateForSave.isEditMode) {
-                                stateForSave.editingPurchaseId
-                                    ?: 0L
-                            } else {
-                                0L
-                            },
-
+                        id = if (stateForSave.isEditMode) stateForSave.editingPurchaseId ?: 0L else 0L,
                         supplierId = supplierId,
-                        supplierName =
-                            stateForSave.supplierName.trim(),
-                        invoiceNumber =
-                            normalizedInvoiceNumber,
-                        normalizedInvoiceNumber =
-                            normalizedInvoiceNumber,
-                        invoiceDate =
-                            stateForSave.invoiceDate.trim(),
-                        receivedDate =
-                            stateForSave.receivedDate.trim(),
-
-                        financialYearStart =
-                            financialYearStart,
-
-                        purchaseType =
-                            stateForSave.purchaseType.trim(),
-                        paymentType =
-                            stateForSave.paymentType.trim(),
-                        creditDays =
-                            stateForSave.creditDays
-                                .trim()
-                                .toIntOrNull()
-                                ?: 0,
-                        reference =
-                            stateForSave.reference.trim(),
-                        subtotal =
-                            stateForSave.grossAmount,
-                        discountAmount =
-                            stateForSave.discountAmount,
-                        taxableAmount =
-                            stateForSave.taxableAmount,
-
-                        // Current Purchase UI exposes total GST,
-                        // not separate CGST / SGST / IGST breakup.
-                        // Preserve the total tax in IGST temporarily
-                        // rather than silently losing the tax amount.
+                        supplierName = stateForSave.supplierName.trim(),
+                        invoiceNumber = finalInvoiceNumber,
+                        normalizedInvoiceNumber = finalInvoiceNumber,
+                        invoiceDate = stateForSave.invoiceDate.trim(),
+                        receivedDate = stateForSave.receivedDate.trim(),
+                        financialYearStart = financialYearStart,
+                        purchaseType = stateForSave.purchaseType.trim(),
+                        paymentType = stateForSave.paymentType.trim(),
+                        creditDays = stateForSave.creditDays.trim().toIntOrNull() ?: 0,
+                        reference = stateForSave.reference.trim(),
+                        subtotal = stateForSave.grossAmount,
+                        discountAmount = stateForSave.discountAmount,
+                        taxableAmount = stateForSave.taxableAmount,
                         cgstAmount = 0.0,
                         sgstAmount = 0.0,
-                        igstAmount =
-                            stateForSave.taxAmount,
-
-                        grandTotal =
-                            stateForSave.netAmount
+                        igstAmount = stateForSave.taxAmount,
+                        grandTotal = stateForSave.netAmount,
+                        status = stateForSave.status
                     )
 
                 val itemsWithLenses =
                     stateForSave.items.map { item ->
+                        val grossAmount = item.quantity * item.purchaseRate
+                        val discountAmount = grossAmount * (item.discountPercent / 100.0)
+                        val taxableAmount = grossAmount - discountAmount
+                        val gstAmount = taxableAmount * (item.gstPercent / 100.0)
+                        val lineTotal = taxableAmount + gstAmount
 
-                        val grossAmount =
-                            item.quantity *
-                                    item.purchaseRate
+                        val itemEntity = PurchaseItemEntity(
+                            purchaseId = 0L,
+                            productId = item.productId,
+                            power = item.power.trim(),
+                            quantity = item.quantity,
+                            purchaseRate = item.purchaseRate,
+                            discountPercent = item.discountPercent,
+                            gstPercent = item.gstPercent,
+                            batchNumber = item.batchNumber.trim(),
+                            expiryDate = "",
+                            grossAmount = grossAmount,
+                            discountAmount = discountAmount,
+                            taxableAmount = taxableAmount,
+                            gstAmount = gstAmount,
+                            lineTotal = lineTotal
+                        )
 
-                        val discountAmount =
-                            grossAmount *
-                                    (
-                                            item.discountPercent /
-                                                    100.0
-                                            )
-
-                        val taxableAmount =
-                            grossAmount -
-                                    discountAmount
-
-                        val gstAmount =
-                            taxableAmount *
-                                    (
-                                            item.gstPercent /
-
-                                                    100.0
-                                            )
-
-                        val lineTotal =
-                            taxableAmount +
-                                    gstAmount
-
-                        val itemEntity =
-                            PurchaseItemEntity(
-                                // Replaced inside DAO transaction.
-                                purchaseId = 0L,
-
-                                productId =
-                                    item.productId,
-
-                                power =
-                                    item.power.trim(),
-
-                                quantity =
-                                    item.quantity,
-
-                                purchaseRate =
-                                    item.purchaseRate,
-
-                                discountPercent =
-                                    item.discountPercent,
-
-                                gstPercent =
-                                    item.gstPercent,
-
-                                batchNumber =
-                                    item.batchNumber.trim(),
-
-                                // Legacy compatibility field.
-                                // Physical IOL expiry is persisted
-                                // per lens in purchase_lenses.
-                                expiryDate = "",
-
-                                grossAmount =
-                                    grossAmount,
-
-                                discountAmount =
-                                    discountAmount,
-
-                                taxableAmount =
-                                    taxableAmount,
-
-                                gstAmount =
-                                    gstAmount,
-
-                                lineTotal =
-                                    lineTotal
+                        val lensEntities = item.lensDetails.map { lens ->
+                            PurchaseLensEntity(
+                                purchaseItemId = 0L,
+                                serialNumber = lens.serialNumber.trim().uppercase(),
+                                expiryDate = lens.expiryDate.trim()
                             )
+                        }
 
-                        val lensEntities =
-                            item.lensDetails.map { lens ->
-
-                                PurchaseLensEntity(
-                                    // Replaced inside DAO transaction.
-                                    purchaseItemId = 0L,
-
-                                    serialNumber =
-                                        lens.serialNumber
-                                            .trim()
-                                            .uppercase(),
-
-                                    expiryDate =
-                                        lens.expiryDate
-                                            .trim()
-                                )
-                            }
-
-                        itemEntity to
-                                lensEntities
+                        itemEntity to lensEntities
                     }
-
-                // -------------------------------------------------
-                // SAVED SERIAL DUPLICATE VALIDATION
-                // -------------------------------------------------
 
                 val serialsToValidate =
                     stateForSave.items
                         .flatMap { item ->
                             item.lensDetails.map { lens ->
-                                lens.serialNumber
-                                    .trim()
-                                    .uppercase()
+                                lens.serialNumber.trim().uppercase()
                             }
                         }
-                        .filter {
-                            it.isNotBlank()
-                        }
+                        .filter { it.isNotBlank() }
 
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Checking ${serialsToValidate.size} serials for existing duplicates in DB")
                 for (serialNumber in serialsToValidate) {
 
                     val serialExists =
@@ -1922,154 +1765,83 @@ class PurchaseViewModel(
                             stateForSave.editingPurchaseId != null &&
                             stateForSave.editingPurchaseId > 0L
                         ) {
-                            purchaseRepository
-                                .purchaseLensSerialExistsExcludingPurchase(
-                                    serialNumber = serialNumber,
-                                    excludePurchaseId =
-                                        stateForSave.editingPurchaseId
-                                )
+                            purchaseRepository.purchaseLensSerialExistsExcludingPurchase(
+                                serialNumber = serialNumber,
+                                excludePurchaseId = stateForSave.editingPurchaseId
+                            )
                         } else {
-                            purchaseRepository
-                                .purchaseLensSerialExists(
-                                    serialNumber
-                                )
+                            purchaseRepository.purchaseLensSerialExists(serialNumber)
                         }
 
                     if (serialExists) {
-
-                        _uiState.value =
-                            _uiState.value.copy(
-                                isSaving = false,
-                                isSavedSuccessfully = false,
-                                errorMessage =
-                                    "Serial Number $serialNumber already exists in another Purchase."
-                            )
+                        android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Database FAIL - Serial $serialNumber already exists")
+                        _uiState.update { it.copy(
+                            isSaving = false,
+                            isSavedSuccessfully = false,
+                            errorMessage = "Serial Number $serialNumber already exists in another Purchase."
+                        )}
 
                         return@launch
                     }
                 }
 
-                // -------------------------------------------------
-                // INSERT NEW OR UPDATE EXISTING PURCHASE
-                // -------------------------------------------------
-                //
-                // IMPORTANT:
-                // Audit is written only AFTER the Purchase database
-                // operation succeeds. Audit failure itself must never
-                // convert an already-saved Purchase into a UI failure.
-                // -------------------------------------------------
+                val isExistingPurchase = stateForSave.isEditMode && stateForSave.editingPurchaseId != null && stateForSave.editingPurchaseId > 0L
 
-                val isExistingPurchase =
-                    stateForSave.isEditMode &&
-                            stateForSave.editingPurchaseId != null &&
-                            stateForSave.editingPurchaseId > 0L
-
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Calling repository.saveCompletePurchase. isEdit=$isExistingPurchase")
                 val savedPurchaseId =
                     if (isExistingPurchase) {
-
-                        val existingPurchaseId =
-                            stateForSave.editingPurchaseId!!
-
-                        purchaseRepository
-                            .updateCompletePurchase(
-                                purchase =
-                                    purchaseEntity,
-
-                                itemsWithLenses =
-                                    itemsWithLenses
-                            )
-
+                        val existingPurchaseId = stateForSave.editingPurchaseId!!
+                        purchaseRepository.updateCompletePurchase(purchase = purchaseEntity, itemsWithLenses = itemsWithLenses)
                         existingPurchaseId
-
-
                     } else {
-
-                        purchaseRepository
-                            .saveCompletePurchase(
-                                purchase =
-                                    purchaseEntity,
-
-                                itemsWithLenses =
-                                    itemsWithLenses
-                            )
+                        purchaseRepository.saveCompletePurchase(purchase = purchaseEntity, itemsWithLenses = itemsWithLenses)
                     }
 
-
-                // -------------------------------------------------
-                // PURCHASE AUDIT TRAIL
-                // -------------------------------------------------
-                //
-                // The Purchase is already safely committed at this
-                // point. Therefore audit logging is deliberately kept
-                // in its own try/catch block.
-                // -------------------------------------------------
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Repository call SUCCESS. Generated ID=$savedPurchaseId")
 
                 try {
-
+                    android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Recording Audit Trail event")
                     auditTrailRepository.recordEvent(
                         module = "PURCHASE",
-                        action =
-                            if (isExistingPurchase) {
-                                "UPDATE"
-                            } else {
-                                "CREATE"
-                            },
-                        recordId =
-                            savedPurchaseId,
-                        description =
-                            if (isExistingPurchase) {
-                                "Purchase updated â€¢ Invoice $normalizedInvoiceNumber â€¢ ${stateForSave.supplierName.trim()} â€¢ FY ${transactionFinancialYear.displayName}"
-                            } else {
-                                "Purchase created â€¢ Invoice $normalizedInvoiceNumber â€¢ ${stateForSave.supplierName.trim()} â€¢ FY ${transactionFinancialYear.displayName}"
-                            }
+                        action = if (isExistingPurchase) "UPDATE" else "CREATE",
+                        recordId = savedPurchaseId,
+                        description = if (isExistingPurchase) {
+                            "Purchase updated â€¢ Invoice $finalInvoiceNumber â€¢ ${stateForSave.supplierName.trim()} â€¢ FY ${transactionFinancialYear.displayName}"
+                        } else {
+                            "Purchase created â€¢ Invoice $finalInvoiceNumber â€¢ ${stateForSave.supplierName.trim()} â€¢ FY ${transactionFinancialYear.displayName}"
+                        }
                     )
+                    android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Audit Trail recorded SUCCESS")
 
-                } catch (_: Exception) {
-
-                    /*
-                     * Audit failure must never make a successfully
-                     * saved/updated Purchase appear to have failed.
-                     */
+                } catch (e: Exception) {
+                    android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: Audit Trail recorded FAIL - Non-critical: ${e.message}", e)
                 }
 
 
-                _uiState.value =
-                    _uiState.value.copy(
-                        isSaving = false,
-                        isSaved = true,
-                        isDirty = false,
-                        isSavedSuccessfully = true,
-                        errorMessage = null
-                    )
+                _uiState.update { it.copy(
+                    isSaving = false,
+                    isSaved = true,
+                    isDirty = false,
+                    isSavedSuccessfully = true,
+                    errorMessage = null
+                )}
+                android.util.Log.d("PURCHASE_SAVE_TRACE", "VM: Final UI state updated. isSavedSuccessfully=true")
 
             } catch (exception: Exception) {
+                android.util.Log.e("PURCHASE_SAVE_TRACE", "VM: CATCH block entered. Exception: ${exception.javaClass.simpleName}: ${exception.message}", exception)
 
-                val message =
-                    exception.message
-                        ?.takeIf {
-                            it.isNotBlank()
-                        }
-                        ?: "Unable to save Purchase."
+                val message = exception.message?.takeIf { it.isNotBlank() } ?: "Unable to save Purchase."
+                val friendlyMessage = if (message.contains("UNIQUE constraint failed", ignoreCase = true)) {
+                    "Purchase Invoice No. or Serial Number already exists."
+                } else {
+                    message
+                }
 
-                val friendlyMessage =
-                    if (
-                        message.contains(
-                            "UNIQUE constraint failed",
-                            ignoreCase = true
-                        )
-                    ) {
-                        "Purchase Invoice No. or Serial Number already exists."
-                    } else {
-                        message
-                    }
-
-                _uiState.value =
-                    _uiState.value.copy(
-                        isSaving = false,
-                        isSavedSuccessfully = false,
-                        errorMessage =
-                            friendlyMessage
-                    )
+                _uiState.update { it.copy(
+                    isSaving = false,
+                    isSavedSuccessfully = false,
+                    errorMessage = friendlyMessage
+                )}
             }
         }
     }
@@ -2081,18 +1853,17 @@ class PurchaseViewModel(
 
     private fun markPurchaseChanged() {
 
-        val currentState = _uiState.value
-
-        if (currentState.isLoadingPurchaseForEdit || currentState.isSaving) {
-            return
+        _uiState.update { currentState ->
+            if (currentState.isLoadingPurchaseForEdit || currentState.isSaving) {
+                currentState
+            } else {
+                currentState.copy(
+                    isSaved = false,
+                    isDirty = true,
+                    isSavedSuccessfully = false
+                )
+            }
         }
-
-        _uiState.value =
-            currentState.copy(
-                isSaved = false,
-                isDirty = true,
-                isSavedSuccessfully = false
-            )
     }
 
     /*
@@ -2101,10 +1872,9 @@ class PurchaseViewModel(
      */
     fun clearSaveSuccess() {
 
-        _uiState.value =
-            _uiState.value.copy(
-                isSavedSuccessfully = false
-            )
+        _uiState.update { it.copy(
+            isSavedSuccessfully = false
+        )}
     }
 
 
@@ -2141,10 +1911,9 @@ class PurchaseViewModel(
 
     fun clearError() {
 
-        _uiState.value =
-            _uiState.value.copy(
-                errorMessage = null
-            )
+        _uiState.update { it.copy(
+            errorMessage = null
+        )}
     }
 }
 

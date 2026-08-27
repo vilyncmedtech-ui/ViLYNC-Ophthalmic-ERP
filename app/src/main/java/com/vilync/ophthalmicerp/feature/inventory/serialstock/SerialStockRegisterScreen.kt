@@ -126,6 +126,8 @@ fun SerialStockRegisterScreen(
 
     onBack: () -> Unit,
 
+    onDashboard: () -> Unit = {},
+
     onSerialClick: (Long) -> Unit = {}
 
 ) {
@@ -161,6 +163,7 @@ fun SerialStockRegisterScreen(
 
         SerialStockHeader(
             onBack = onBack,
+            onDashboard = onDashboard,
             onExportClick = {
                 showExportDialog = true
             }
@@ -499,6 +502,8 @@ private fun SerialStockHeader(
 
     onBack: () -> Unit,
 
+    onDashboard: () -> Unit,
+
     onExportClick: () -> Unit
 
 ) {
@@ -518,13 +523,19 @@ private fun SerialStockHeader(
         colors =
             CardDefaults.cardColors(
                 containerColor =
-                    SerialNavy
+                    SerialWhite
             ),
 
         elevation =
             CardDefaults.cardElevation(
                 defaultElevation =
-                    6.dp
+                    3.dp
+            ),
+
+        border =
+            androidx.compose.foundation.BorderStroke(
+                width = 1.dp,
+                color = SerialBorder
             )
     ) {
 
@@ -549,17 +560,7 @@ private fun SerialStockHeader(
                         )
                         .background(
                             color =
-                                SerialNavyLight,
-                            shape =
-                                RoundedCornerShape(
-                                    12.dp
-                                )
-                        )
-                        .border(
-                            width =
-                                1.dp,
-                            color =
-                                Color(0xFF3B4F78),
+                                SerialBlueBackground,
                             shape =
                                 RoundedCornerShape(
                                     12.dp
@@ -579,7 +580,7 @@ private fun SerialStockHeader(
                     fontWeight =
                         FontWeight.Normal,
                     color =
-                        SerialWhite
+                        SerialBlue
                 )
             }
 
@@ -601,23 +602,23 @@ private fun SerialStockHeader(
 
                 Text(
                     text =
-                        "Serial Stock Register",
+                        "Serial Inventory",
 
                     fontSize =
-                        20.sp,
+                        19.sp,
 
                     fontWeight =
                         FontWeight.Bold,
 
                     color =
-                        SerialWhite
+                        SerialNavy
                 )
 
 
                 Spacer(
                     modifier =
                         Modifier.height(
-                            3.dp
+                            1.dp
                         )
                 )
 
@@ -627,14 +628,53 @@ private fun SerialStockHeader(
                         "Individual serial-wise inventory tracking",
 
                     fontSize =
-                        12.sp,
+                        11.sp,
 
                     color =
-                        Color(
-                            0xFFC7D0DF
-                        )
+                        SerialMuted
                 )
             }
+
+
+            // =================================================
+            // DASHBOARD ACTION
+            // =================================================
+
+            Box(
+                modifier =
+                    Modifier
+                        .background(
+                            color =
+                                Color(0xFFF1F5F9),
+                            shape =
+                                RoundedCornerShape(
+                                    10.dp
+                                )
+                        )
+                        .clickable {
+                            onDashboard()
+                        }
+                        .padding(
+                            horizontal = 10.dp,
+                            vertical = 7.dp
+                        )
+            ) {
+
+                Text(
+                    text = "Dashboard",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = SerialBlue
+                )
+            }
+
+
+            Spacer(
+                modifier =
+                    Modifier.width(
+                        10.dp
+                    )
+            )
 
 
             Box(
@@ -645,15 +685,15 @@ private fun SerialStockHeader(
                                 SerialGold,
                             shape =
                                 RoundedCornerShape(
-                                    12.dp
+                                    10.dp
                                 )
                         )
                         .clickable {
                             onExportClick()
                         }
                         .padding(
-                            horizontal = 14.dp,
-                            vertical = 8.dp
+                            horizontal = 12.dp,
+                            vertical = 7.dp
                         )
             ) {
 
@@ -662,7 +702,7 @@ private fun SerialStockHeader(
                         "EXPORT",
 
                     fontSize =
-                        11.sp,
+                        10.sp,
 
                     fontWeight =
                         FontWeight.Bold,
@@ -1300,7 +1340,7 @@ private fun SerialRegisterHeader() {
         colors =
             CardDefaults.cardColors(
                 containerColor =
-                    SerialNavy
+                    SerialBlueBackground
             ),
 
         elevation =
@@ -1339,7 +1379,7 @@ private fun SerialRegisterHeader() {
                     FontWeight.Bold,
 
                 color =
-                    Color(0xFFDCE8FA)
+                    SerialBlue
             )
 
 
@@ -1359,7 +1399,7 @@ private fun SerialRegisterHeader() {
                     FontWeight.Bold,
 
                 color =
-                    Color(0xFFDCE8FA)
+                    SerialBlue
             )
 
 
@@ -1379,7 +1419,7 @@ private fun SerialRegisterHeader() {
                     FontWeight.Bold,
 
                 color =
-                    Color(0xFFDCE8FA)
+                    SerialBlue
             )
 
 
@@ -1399,7 +1439,7 @@ private fun SerialRegisterHeader() {
                     FontWeight.Bold,
 
                 color =
-                    Color(0xFFDCE8FA)
+                    SerialBlue
             )
 
 
@@ -1419,7 +1459,7 @@ private fun SerialRegisterHeader() {
                     FontWeight.Bold,
 
                 color =
-                    Color(0xFFDCE8FA)
+                    SerialBlue
             )
 
 
@@ -1496,12 +1536,26 @@ private fun SerialRegisterRow(
                 // SERIAL
                 // =============================================
 
-                Text(
-                    text =
+                val displaySerial =
+                    if (
+                        row.serialPrefix.isNotBlank() &&
+                        !row.serialNumber.startsWith(
+                            row.serialPrefix,
+                            ignoreCase = true
+                        )
+                    ) {
+                        "${row.serialPrefix} ${row.serialNumber}"
+                    } else {
                         row.serialNumber
                             .ifBlank {
                                 "—"
-                            },
+                            }
+                    }
+
+
+                Text(
+                    text =
+                        displaySerial,
 
                     modifier =
                         Modifier.weight(
@@ -1536,12 +1590,22 @@ private fun SerialRegisterRow(
                         )
                 ) {
 
-                    Text(
-                        text =
+                    val displayProductName =
+                        if (
+                            row.model.isNotBlank()
+                        ) {
+                            "${row.productName} (${row.model})"
+                        } else {
                             row.productName
                                 .ifBlank {
                                     "Unnamed Product"
-                                },
+                                }
+                        }
+
+
+                    Text(
+                        text =
+                            displayProductName,
 
                         fontSize =
                             11.sp,
@@ -1558,43 +1622,6 @@ private fun SerialRegisterRow(
                         overflow =
                             TextOverflow.Ellipsis
                     )
-
-
-                    val productSubText =
-                        listOf(
-                            row.brandName,
-                            row.model
-                        )
-                            .filter {
-                                it.isNotBlank()
-                            }
-                            .distinct()
-                            .joinToString(
-                                separator = " • "
-                            )
-
-
-                    if (
-                        productSubText.isNotBlank()
-                    ) {
-
-                        Text(
-                            text =
-                                productSubText,
-
-                            fontSize =
-                                8.sp,
-
-                            color =
-                                SerialMuted,
-
-                            maxLines =
-                                1,
-
-                            overflow =
-                                TextOverflow.Ellipsis
-                        )
-                    }
                 }
 
 

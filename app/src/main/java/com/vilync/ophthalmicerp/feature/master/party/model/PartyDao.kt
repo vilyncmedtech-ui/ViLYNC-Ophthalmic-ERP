@@ -209,4 +209,11 @@ interface PartyDao {
     suspend fun deleteParty(
         partyId: Long
     ): Int
+
+    // =========================================================
+    // STARTUP / BOOTSTRAP
+    // =========================================================
+
+    @Query("SELECT COUNT(*) FROM parties")
+    suspend fun getPartyCount(): Int
 }

@@ -31,7 +31,12 @@ import com.vilync.ophthalmicerp.feature.inventory.logic.GetAvailableStockUseCase
 import com.vilync.ophthalmicerp.feature.inventory.alert.LowStockAlertUseCase
 import com.vilync.ophthalmicerp.feature.inventory.opening.domain.OpeningStockUseCase
 import com.vilync.ophthalmicerp.feature.inventory.opening.presentation.*
+import com.vilync.ophthalmicerp.feature.inventory.adjustment.domain.StockAdjustmentUseCase
+import com.vilync.ophthalmicerp.feature.inventory.adjustment.presentation.*
+import com.vilync.ophthalmicerp.feature.inventory.reconciliation.domain.StockReconciliationUseCase
+import com.vilync.ophthalmicerp.feature.inventory.reconciliation.presentation.*
 import com.vilync.ophthalmicerp.feature.payment.logic.FinancialTransactionUseCase
+import com.vilync.ophthalmicerp.feature.payment.logic.FinancialReportingUseCase
 import com.vilync.ophthalmicerp.feature.payment.logic.OutstandingCalculationUseCase
 import com.vilync.ophthalmicerp.feature.payment.logic.PaymentUseCase
 import com.vilync.ophthalmicerp.feature.payment.presentation.*
@@ -47,6 +52,19 @@ import com.vilync.ophthalmicerp.feature.sales.creditnote.presentation.*
 import com.vilync.ophthalmicerp.feature.sales.proforma.presentation.*
 import com.vilync.ophthalmicerp.feature.sales.sample.presentation.*
 import androidx.compose.ui.graphics.Color
+import com.vilync.ophthalmicerp.feature.inventory.alert.presentation.LowStockStatusScreen
+import com.vilync.ophthalmicerp.feature.inventory.alert.presentation.LowStockStatusViewModel
+import com.vilync.ophthalmicerp.feature.inventory.alert.presentation.LowStockStatusViewModelFactory
+import com.vilync.ophthalmicerp.core.document.engine.*
+import com.vilync.ophthalmicerp.core.document.engine.binding.*
+import com.vilync.ophthalmicerp.core.document.template.*
+import com.vilync.ophthalmicerp.feature.designer.domain.binding.*
+import com.vilync.ophthalmicerp.feature.designer.data.repository.DocumentTemplateRepositoryImpl
+import com.vilync.ophthalmicerp.feature.designer.domain.PurchaseOrderTemplateBootstrap
+import com.vilync.ophthalmicerp.feature.inventory.threshold.data.InventoryThresholdRepository
+import com.vilync.ophthalmicerp.feature.inventory.threshold.presentation.InventoryThresholdScreen
+import com.vilync.ophthalmicerp.feature.inventory.threshold.presentation.InventoryThresholdViewModel
+import com.vilync.ophthalmicerp.feature.inventory.threshold.presentation.InventoryThresholdViewModelFactory
 import com.vilync.ophthalmicerp.feature.inventory.InventoryHomeScreen
 import com.vilync.ophthalmicerp.feature.inventory.StockRegisterScreen
 import com.vilync.ophthalmicerp.feature.inventory.StockRegisterViewModel
@@ -112,6 +130,7 @@ fun AppNavigation() {
     val googleAuthManager = remember { GoogleAuthManager(context) }
     val backupSettingsManager = remember { BackupSettingsManager(context) }
     val backupRepository = remember { BackupRepository(purchaseDatabase) }
+    val thresholdRepository = remember { InventoryThresholdRepository(purchaseDatabase.inventoryThresholdDao()) }
     val integrityVerifier = remember { BackupIntegrityVerifier(context) }
     val backupService = remember { GoogleDriveBackupService(context, backupSettingsManager) }
     val backupUseCase = remember {
@@ -144,6 +163,7 @@ fun AppNavigation() {
     val appStartupViewModel: AppStartupViewModel = viewModel(
         factory = AppStartupViewModelFactory(
             userRepository = userRepository,
+            startupRepository = StartupRepository(context),
             persistentSessionStore = persistentSessionStore
         )
     )
@@ -157,15 +177,6 @@ fun AppNavigation() {
     )
     val purchaseProductRepository = ProductMasterRepository(productDao = purchaseDatabase.productDao())
 
-    val purchaseViewModel: PurchaseViewModel = viewModel(
-        factory = PurchaseViewModelFactory(
-            partyRepository = purchasePartyRepository,
-            purchaseRepository = purchaseRepository,
-            productRepository = purchaseProductRepository,
-            auditTrailRepository = auditTrailRepository
-        )
-    )
-
     val salesRepository = SalesRepository(
         salesDao = purchaseDatabase.salesDao(), 
         database = purchaseDatabase, 
@@ -174,6 +185,8 @@ fun AppNavigation() {
     )
     val salesProductRepository = ProductRepository(productDao = purchaseDatabase.productDao())
     val salesInventoryRepository = InventoryRepository(inventoryDao = purchaseDatabase.inventoryDao())
+    val inventoryStockRepository = remember { InventoryStockRepository(purchaseDatabase.inventoryStockDao(), purchaseDatabase.productDao(), purchaseDatabase.inventoryThresholdDao()) }
+    val stockEngine = remember { GetAvailableStockUseCase(inventoryStockRepository) }
     val challanRepository = ChallanRepository(
         challanDao = purchaseDatabase.challanDao(), 
         database = purchaseDatabase,
@@ -197,7 +210,27 @@ fun AppNavigation() {
 
     val accountRepository = remember { AccountRepository(accountDao = purchaseDatabase.accountDao()) }
     val financialTransactionRepository = remember { FinancialTransactionRepository(financialTransactionDao = purchaseDatabase.financialTransactionDao()) }
-    val financialTransactionUseCase = remember { FinancialTransactionUseCase(transactionRepository = financialTransactionRepository, accountRepository = accountRepository, auditTrailRepository = auditTrailRepository) }
+    val financialTransactionUseCase = remember { 
+        FinancialTransactionUseCase(
+            transactionRepository = financialTransactionRepository, 
+            accountRepository = accountRepository, 
+            auditTrailRepository = auditTrailRepository,
+            numberingRepository = numberingRepository,
+            database = purchaseDatabase
+        ) 
+    }
+    
+    val reportingUseCase = remember {
+        FinancialReportingUseCase(
+            salesDao = purchaseDatabase.salesDao(),
+            purchaseDao = purchaseDatabase.purchaseDao(),
+            salesCreditNoteDao = purchaseDatabase.salesCreditNoteDao(),
+            purchaseReturnDao = purchaseDatabase.purchaseReturnDao(),
+            financialTransactionDao = purchaseDatabase.financialTransactionDao(),
+            partyRepository = purchasePartyRepository
+        )
+    }
+
     val outstandingCalculationUseCase = remember { 
         OutstandingCalculationUseCase(
             salesRepository = salesRepository, 
@@ -209,9 +242,69 @@ fun AppNavigation() {
     }
     val paymentUseCase = remember { PaymentUseCase(financialTransactionUseCase = financialTransactionUseCase, outstandingCalculationUseCase = outstandingCalculationUseCase, financialTransactionRepository = financialTransactionRepository) }
     val openingStockRepository = remember { OpeningStockRepository(openingStockDao = purchaseDatabase.openingStockDao(), database = purchaseDatabase) }
-    val openingStockUseCase = remember { OpeningStockUseCase(openingStockRepository = openingStockRepository, inventoryRepository = salesInventoryRepository, stockMovementRepository = StockMovementRepository(purchaseDatabase.stockMovementDao()), productMasterRepository = purchaseProductRepository, auditTrailRepository = auditTrailRepository) }
+    val openingStockUseCase = remember { 
+        OpeningStockUseCase(
+            openingStockRepository = openingStockRepository, 
+            inventoryRepository = salesInventoryRepository, 
+            stockMovementRepository = StockMovementRepository(purchaseDatabase.stockMovementDao()), 
+            productMasterRepository = purchaseProductRepository, 
+            auditTrailRepository = auditTrailRepository,
+            numberingRepository = numberingRepository
+        ) 
+    }
+
+    val stockAdjustmentUseCase = remember {
+        StockAdjustmentUseCase(
+            inventoryRepository = salesInventoryRepository,
+            stockMovementRepository = StockMovementRepository(purchaseDatabase.stockMovementDao()),
+            auditTrailRepository = auditTrailRepository
+        )
+    }
+
+    val stockReconciliationUseCase = remember {
+        StockReconciliationUseCase(
+            inventoryRepository = salesInventoryRepository,
+            stockMovementRepository = StockMovementRepository(purchaseDatabase.stockMovementDao()),
+            auditTrailRepository = auditTrailRepository
+        )
+    }
+
+    val lowStockUseCase = remember { LowStockAlertUseCase(stockEngine) }
 
     val globalSearchUseCase = remember { GlobalSearchUseCase(database = purchaseDatabase) }
+
+    // UNIVERSAL DOCUMENT ENGINE
+    val templateRepository = remember { 
+        DocumentTemplateRepositoryImpl(
+            dao = purchaseDatabase.documentDesignerDao(),
+            serializer = GsonTemplateSerializer()
+        )
+    }
+    val placeholderResolver = remember {
+        PlaceholderResolver(
+            listOf(
+                CompanyDynamicFieldProvider(companyProfileRepository),
+                PurchaseDynamicFieldProvider(purchaseRepository, purchasePartyRepository, salesProductRepository),
+                SalesDynamicFieldProvider(salesRepository),
+                SampleDynamicFieldProvider()
+            )
+        )
+    }
+    val documentRuntime = remember {
+        DocumentRuntime(
+            repository = templateRepository,
+            resolver = placeholderResolver,
+            bindingEngine = BindingEngine(),
+            layoutFactory = DefaultLayoutObjectFactory(),
+            renderingEngine = DefaultRenderingEngine(),
+            pdfRenderer = DefaultPdfRenderer(context),
+            printRenderer = DefaultPrintRenderer(context)
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        PurchaseOrderTemplateBootstrap.bootstrap(templateRepository)
+    }
 
     val activeFinancialYear by financialYearViewModel.activeFinancialYear.collectAsState()
     val currentFinancialYear = activeFinancialYear.startYear
@@ -272,7 +365,7 @@ fun AppNavigation() {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     return DashboardViewModel(
                         database = purchaseDatabase,
-                        lowStockUseCase = LowStockAlertUseCase(stockEngine = GetAvailableStockUseCase(InventoryStockRepository(purchaseDatabase.inventoryStockDao(), purchaseDatabase.productDao()))),
+                        lowStockUseCase = lowStockUseCase,
                         outstandingCalculationUseCase = OutstandingCalculationUseCase(
                             salesRepository = salesRepository,
                             purchaseRepository = purchaseRepository,
@@ -295,7 +388,7 @@ fun AppNavigation() {
                 onCustomerOverdueClick = { navController.navigate("financial_report/customer_ledger") },
                 onSupplierOverdueClick = { navController.navigate("financial_report/supplier_ledger") },
                 onExpiryAlertClick = { navController.navigate("sales_report/inventory_ageing") },
-                onLowStockClick = { navController.navigate("sales_report/low_stock_alert") },
+                onLowStockClick = { navController.navigate("low_stock_status") },
                 onPendingSamplesClick = { navController.navigate("sales_category/${SalesRegisterType.SAMPLE_ISSUE.name}") },
                 onPendingChallansClick = { navController.navigate("sales_category/${SalesRegisterType.CHALLAN.name}") },
                 onMasterClick = { navController.navigate("master_home") },
@@ -468,7 +561,15 @@ fun AppNavigation() {
             arguments = listOf(navArgument("challanId") { type = NavType.LongType })
         ) { backStackEntry ->
             val challanId = backStackEntry.arguments?.getLong("challanId") ?: 0L
-            val detailViewModel: ChallanDetailViewModel = viewModel(factory = ChallanDetailViewModelFactory(challanId = challanId, repository = challanRepository, companyProfileDao = purchaseDatabase.companyProfileDao()))
+            val detailViewModel: ChallanDetailViewModel = viewModel(
+                factory = ChallanDetailViewModelFactory(
+                    challanId = challanId, 
+                    repository = challanRepository, 
+                    productRepository = salesProductRepository, 
+                    partyRepository = purchasePartyRepository,
+                    companyProfileDao = purchaseDatabase.companyProfileDao()
+                )
+            )
             ChallanDetailScreen(viewModel = detailViewModel, onBack = { navController.popBackStack() }, onDashboard = { navController.navigate("dashboard") }, onEdit = { id -> navController.navigate("sales/challan/edit/$id") })
         }
 
@@ -477,7 +578,7 @@ fun AppNavigation() {
             arguments = listOf(navArgument("cnId") { type = NavType.LongType })
         ) { backStackEntry ->
             val cnId = backStackEntry.arguments?.getLong("cnId") ?: 0L
-            val detailViewModel: CreditNoteDetailViewModel = viewModel(factory = CreditNoteDetailViewModelFactory(creditNoteId = cnId, repository = salesCreditNoteRepository, companyProfileDao = purchaseDatabase.companyProfileDao()))
+            val detailViewModel: CreditNoteDetailViewModel = viewModel(factory = CreditNoteDetailViewModelFactory(creditNoteId = cnId, repository = salesCreditNoteRepository, productRepository = salesProductRepository, companyProfileDao = purchaseDatabase.companyProfileDao()))
             CreditNoteDetailScreen(viewModel = detailViewModel, onBack = { navController.popBackStack() }, onDashboard = { navController.navigate("dashboard") }, onEdit = { id -> navController.navigate("sales/creditnote/edit/$id") })
         }
 
@@ -500,7 +601,17 @@ fun AppNavigation() {
         }
 
         composable(route = "sales/invoice/new") {
-            val salesViewModel: SalesViewModel = viewModel(factory = SalesViewModelFactory(salesRepository = salesRepository, partyRepository = purchasePartyRepository, productRepository = salesProductRepository, inventoryRepository = salesInventoryRepository, challanRepository = challanRepository))
+            val salesViewModel: SalesViewModel = viewModel(
+                factory = SalesViewModelFactory(
+                    salesRepository = salesRepository,
+                    partyRepository = purchasePartyRepository,
+                    productRepository = salesProductRepository,
+                    inventoryRepository = salesInventoryRepository,
+                    challanRepository = challanRepository,
+                    sampleIssueRepository = sampleIssueRepository,
+                    numberingRepository = numberingRepository
+                )
+            )
             SalesEntryScreen(
                 viewModel = salesViewModel,
                 onBack = { navController.popBackStack() },
@@ -521,6 +632,8 @@ fun AppNavigation() {
                     productRepository = salesProductRepository,
                     inventoryRepository = salesInventoryRepository,
                     challanRepository = challanRepository,
+                    sampleIssueRepository = sampleIssueRepository,
+                    numberingRepository = numberingRepository,
                     editSaleId = saleId
                 )
             )
@@ -538,7 +651,8 @@ fun AppNavigation() {
                     challanRepository = challanRepository,
                     partyRepository = purchasePartyRepository,
                     productRepository = purchaseProductRepository,
-                    inventoryRepository = salesInventoryRepository
+                    inventoryRepository = salesInventoryRepository,
+                    numberingRepository = numberingRepository
                 )
             )
             NewChallanScreen(
@@ -548,11 +662,34 @@ fun AppNavigation() {
             )
         }
 
+        composable(
+            route = "sales/challan/edit/{challanId}",
+            arguments = listOf(navArgument("challanId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val challanId = backStackEntry.arguments?.getLong("challanId") ?: 0L
+            val challanViewModel: NewChallanViewModel = viewModel(
+                factory = NewChallanViewModelFactory(
+                    challanRepository = challanRepository,
+                    partyRepository = purchasePartyRepository,
+                    productRepository = purchaseProductRepository,
+                    inventoryRepository = salesInventoryRepository,
+                    numberingRepository = numberingRepository,
+                    editChallanId = challanId
+                )
+            )
+            NewChallanScreen(
+                viewModel = challanViewModel,
+                onBack = { navController.popBackStack() },
+                onSavedToDetail = { id -> navController.navigate("sales/challan/$id") { popUpTo("sales/challan/edit/$challanId") { inclusive = true } } }
+            )
+        }
+
         composable(route = "sales/creditnote/new") {
             val creditNoteViewModel: NewCreditNoteViewModel = viewModel(
                 factory = NewCreditNoteViewModelFactory(
                     salesRepository = salesRepository,
-                    creditNoteRepository = salesCreditNoteRepository
+                    creditNoteRepository = salesCreditNoteRepository,
+                    numberingRepository = numberingRepository
                 )
             )
             NewCreditNoteScreen(
@@ -560,6 +697,27 @@ fun AppNavigation() {
                 onBack = { navController.popBackStack() },
                 onOpenRegister = { navController.navigate("sales_register/${SalesRegisterType.CREDIT_NOTE.name}") },
                 onSavedToDetail = { id -> navController.navigate("sales/creditnote/$id") { popUpTo("sales/creditnote/new") { inclusive = true } } }
+            )
+        }
+
+        composable(
+            route = "sales/creditnote/edit/{cnId}",
+            arguments = listOf(navArgument("cnId") { type = NavType.LongType })
+        ) { backStackEntry ->
+            val cnId = backStackEntry.arguments?.getLong("cnId") ?: 0L
+            val creditNoteViewModel: NewCreditNoteViewModel = viewModel(
+                factory = NewCreditNoteViewModelFactory(
+                    salesRepository = salesRepository,
+                    creditNoteRepository = salesCreditNoteRepository,
+                    numberingRepository = numberingRepository,
+                    editingId = cnId
+                )
+            )
+            NewCreditNoteScreen(
+                viewModel = creditNoteViewModel,
+                onBack = { navController.popBackStack() },
+                onOpenRegister = { navController.navigate("sales_register/${SalesRegisterType.CREDIT_NOTE.name}") },
+                onSavedToDetail = { id -> navController.navigate("sales/creditnote/$id") { popUpTo("sales/creditnote/edit/$cnId") { inclusive = true } } }
             )
         }
 
@@ -623,7 +781,8 @@ fun AppNavigation() {
                             repository = sampleIssueRepository,
                             partyRepository = purchasePartyRepository,
                             inventoryRepository = salesInventoryRepository,
-                            productRepository = purchaseProductRepository
+                            productRepository = purchaseProductRepository,
+                            numberingRepository = numberingRepository
                         ) as T
                     }
                 }
@@ -648,7 +807,8 @@ fun AppNavigation() {
                             repository = sampleIssueRepository,
                             partyRepository = purchasePartyRepository,
                             inventoryRepository = salesInventoryRepository,
-                            productRepository = purchaseProductRepository
+                            productRepository = purchaseProductRepository,
+                            numberingRepository = numberingRepository
                         ) as T
                     }
                 }
@@ -667,16 +827,149 @@ fun AppNavigation() {
             PurchaseHomeScreen(
                 onBack = { navController.popBackStack() },
                 onDashboard = { navController.navigate("dashboard") },
-                onNewPurchase = { navController.navigate("purchase_entry") },
+                onNewPurchase = { navController.navigate("purchase_order_new") },
+                onPurchaseInvoice = { navController.navigate("purchase_entry") },
                 onPurchaseRegister = { navController.navigate("purchase_register") },
                 onPurchaseReturn = { navController.navigate("purchase_return") },
-                onPurchaseReturnRegister = { navController.navigate("purchase_return_saved_register") }
+                onPurchaseReturnRegister = { navController.navigate("purchase_return_saved_register") },
+                onPurchaseOrderRegister = { navController.navigate("purchase_order_register") }
             )
         }
 
-        composable(route = "purchase_entry") {
-            val purchaseViewModel: PurchaseViewModel = viewModel(factory = PurchaseViewModelFactory(partyRepository = purchasePartyRepository, purchaseRepository = purchaseRepository, productRepository = purchaseProductRepository, auditTrailRepository = auditTrailRepository))
-            PurchaseEntryScreen(viewModel = purchaseViewModel, onBack = { navController.popBackStack() }, onAddProductClick = { navController.navigate("add_purchase_items") }, onDashboard = { navController.navigate("dashboard") })
+        composable(route = "purchase_order_new") {
+            val poViewModel: PurchaseOrderViewModel = viewModel(
+                factory = PurchaseOrderViewModelFactory(
+                    partyRepository = purchasePartyRepository,
+                    purchaseRepository = purchaseRepository,
+                    productRepository = purchaseProductRepository,
+                    auditTrailRepository = auditTrailRepository,
+                    numberingRepository = numberingRepository
+                )
+            )
+            PurchaseOrderEntryScreen(
+                viewModel = poViewModel,
+                onAddProductClick = { navController.navigate("add_purchase_order_item") },
+                onEditProductClick = { index -> navController.navigate("add_purchase_order_item?index=$index") },
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") }
+            )
+        }
+
+        composable(
+            route = "purchase_order_new_from_shortage?pid={pid}&pwr={pwr}&q={q}",
+            arguments = listOf(
+                navArgument("pid") { type = NavType.LongType; defaultValue = 0L },
+                navArgument("pwr") { type = NavType.StringType; defaultValue = "" },
+                navArgument("q") { type = NavType.IntType; defaultValue = 0 }
+            )
+        ) { backStackEntry ->
+            val pid = backStackEntry.arguments?.getLong("pid") ?: 0L
+            val pwr = backStackEntry.arguments?.getString("pwr") ?: ""
+            val q = backStackEntry.arguments?.getInt("q") ?: 0
+            
+            val poViewModel: PurchaseOrderViewModel = viewModel(
+                factory = PurchaseOrderViewModelFactory(
+                    partyRepository = purchasePartyRepository,
+                    purchaseRepository = purchaseRepository,
+                    productRepository = purchaseProductRepository,
+                    auditTrailRepository = auditTrailRepository,
+                    numberingRepository = numberingRepository,
+                    initialProductId = pid,
+                    initialPower = pwr,
+                    initialQty = q
+                )
+            )
+            PurchaseOrderEntryScreen(
+                viewModel = poViewModel,
+                onAddProductClick = { navController.navigate("add_purchase_order_item") },
+                onEditProductClick = { index -> navController.navigate("add_purchase_order_item?index=$index") },
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") }
+            )
+        }
+
+        composable(
+            route = "add_purchase_order_item?index={index}",
+            arguments = listOf(navArgument("index") { type = NavType.IntType; defaultValue = -1 })
+        ) { backStackEntry ->
+            val index = backStackEntry.arguments?.getInt("index") ?: -1
+            
+            val parentEntry = remember(backStackEntry) {
+                try {
+                    navController.getBackStackEntry("purchase_order_new")
+                } catch (e: Exception) {
+                    navController.getBackStackEntry("purchase_order_new_from_shortage?pid={pid}&pwr={pwr}&q={q}")
+                }
+            }
+
+            val poViewModel: PurchaseOrderViewModel = viewModel(viewModelStoreOwner = parentEntry)
+            val addItemViewModel: AddPurchaseOrderItemViewModel = viewModel(
+                factory = AddPurchaseOrderItemViewModelFactory(
+                    productRepository = purchaseProductRepository,
+                    stockUseCase = stockEngine
+                )
+            )
+            
+            LaunchedEffect(index) {
+                if (index >= 0) {
+                    poViewModel.uiState.value.items.getOrNull(index)?.let {
+                        addItemViewModel.loadItem(it)
+                    }
+                }
+            }
+
+            AddPurchaseOrderItemScreen(
+                viewModel = addItemViewModel,
+                onAddItems = { items ->
+                    if (index >= 0) {
+                        // In edit mode, we replace the original line with the first variant
+                        // and add any additional variants as new lines
+                        items.forEachIndexed { i, item ->
+                            if (i == 0) poViewModel.updateItem(index, item)
+                            else poViewModel.addItem(item)
+                        }
+                    } else {
+                        // Add all variants as separate lines
+                        items.forEach { poViewModel.addItem(it) }
+                    }
+                    navController.popBackStack()
+                },
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") }
+            )
+        }
+
+        composable(route = "purchase_entry?productId={productId}&power={power}&qty={qty}&status={status}", 
+            arguments = listOf(
+                navArgument("productId") { type = NavType.LongType; defaultValue = 0L },
+                navArgument("power") { type = NavType.StringType; defaultValue = "" },
+                navArgument("qty") { type = NavType.IntType; defaultValue = 0 },
+                navArgument("status") { type = NavType.StringType; defaultValue = "POSTED" }
+            )
+        ) { backStackEntry ->
+            val pid = backStackEntry.arguments?.getLong("productId") ?: 0L
+            val pwr = backStackEntry.arguments?.getString("power") ?: ""
+            val q = backStackEntry.arguments?.getInt("qty") ?: 0
+            val st = backStackEntry.arguments?.getString("status") ?: "POSTED"
+
+            val purchaseViewModel: PurchaseViewModel = viewModel(
+                factory = PurchaseViewModelFactory(
+                    partyRepository = purchasePartyRepository,
+                    purchaseRepository = purchaseRepository,
+                    productRepository = purchaseProductRepository,
+                    auditTrailRepository = auditTrailRepository,
+                    initialProductId = pid,
+                    initialPower = pwr,
+                    initialQty = q,
+                    initialStatus = st
+                )
+            )
+            PurchaseEntryScreen(
+                viewModel = purchaseViewModel,
+                onAddProductClick = { navController.navigate("add_purchase_items") },
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") }
+            )
         }
 
         composable(
@@ -684,20 +977,78 @@ fun AppNavigation() {
             arguments = listOf(navArgument("purchaseId") { type = NavType.LongType })
         ) { backStackEntry ->
             val purchaseId = backStackEntry.arguments?.getLong("purchaseId") ?: 0L
-            val purchaseViewModel: PurchaseViewModel = viewModel(factory = PurchaseViewModelFactory(partyRepository = purchasePartyRepository, purchaseRepository = purchaseRepository, productRepository = purchaseProductRepository, auditTrailRepository = auditTrailRepository))
+            val purchaseViewModel: PurchaseViewModel = viewModel(
+                factory = PurchaseViewModelFactory(
+                    partyRepository = purchasePartyRepository,
+                    purchaseRepository = purchaseRepository,
+                    productRepository = purchaseProductRepository,
+                    auditTrailRepository = auditTrailRepository,
+                    numberingRepository = numberingRepository
+                )
+            )
             LaunchedEffect(purchaseId) {
                 purchaseViewModel.loadPurchaseForEdit(purchaseId)
             }
-            PurchaseEntryScreen(viewModel = purchaseViewModel, onBack = { navController.popBackStack() }, onAddProductClick = { navController.navigate("add_purchase_items") }, onDashboard = { navController.navigate("dashboard") })
+            PurchaseEntryScreen(
+                viewModel = purchaseViewModel,
+                onAddProductClick = { navController.navigate("add_purchase_items") },
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") }
+            )
         }
 
         composable(route = "add_purchase_items") {
+            val purchaseEntryEntry = remember(it) {
+                navController.previousBackStackEntry
+            }
+            val entryViewModel: PurchaseViewModel = if (purchaseEntryEntry != null) {
+                viewModel(viewModelStoreOwner = purchaseEntryEntry)
+            } else {
+                // Fallback (should not normally happen if navigating from entry)
+                viewModel(
+                    factory = PurchaseViewModelFactory(
+                        partyRepository = purchasePartyRepository,
+                        purchaseRepository = purchaseRepository,
+                        productRepository = purchaseProductRepository,
+                        auditTrailRepository = auditTrailRepository,
+                        numberingRepository = numberingRepository
+                    )
+                )
+            }
+
             val addPurchaseItemViewModel: AddPurchaseItemViewModel = viewModel(factory = AddPurchaseItemViewModelFactory(productRepository = purchaseProductRepository, purchaseRepository = purchaseRepository))
-            AddPurchaseItemScreen(viewModel = addPurchaseItemViewModel, onAddItem = { navController.popBackStack() }, onBack = { navController.popBackStack() }, onDashboard = { navController.navigate("dashboard") })
+            AddPurchaseItemScreen(
+                viewModel = addPurchaseItemViewModel,
+                onAddItem = { item ->
+                    entryViewModel.addItem(item)
+                    navController.popBackStack()
+                },
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") }
+            )
+        }
+
+        composable(route = "purchase_order_register") {
+            val registerViewModel: PurchaseRegisterViewModel = viewModel(
+                factory = PurchaseRegisterViewModelFactory(
+                    purchaseRepository = purchaseRepository,
+                    purchaseReturnRepository = purchaseReturnRepository,
+                    requiredStatus = "ORDER"
+                )
+            )
+            PurchaseRegisterScreen(
+                viewModel = registerViewModel,
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") },
+                onNewPurchase = { navController.navigate("purchase_entry?status=ORDER") },
+                onPurchaseClick = { id -> navController.navigate("purchase_detail/$id") },
+                onEditPurchase = { id -> navController.navigate("purchase_edit/$id") },
+                title = "Purchase Order Register"
+            )
         }
 
         composable(route = "purchase_register") {
-            val purchaseRegisterViewModel: PurchaseRegisterViewModel = viewModel(factory = PurchaseRegisterViewModelFactory(purchaseRepository = purchaseRepository))
+            val purchaseRegisterViewModel: PurchaseRegisterViewModel = viewModel(factory = PurchaseRegisterViewModelFactory(purchaseRepository = purchaseRepository, purchaseReturnRepository = purchaseReturnRepository))
             PurchaseRegisterScreen(
                 viewModel = purchaseRegisterViewModel, 
                 onBack = { navController.popBackStack() }, 
@@ -709,7 +1060,14 @@ fun AppNavigation() {
 
         composable(route = "purchase_detail/{purchaseId}", arguments = listOf(navArgument("purchaseId") { type = NavType.LongType })) { backStackEntry ->
             val purchaseId = backStackEntry.arguments?.getLong("purchaseId") ?: 0L
-            val detailViewModel: PurchaseDetailViewModel = viewModel(factory = PurchaseDetailViewModelFactory(purchaseId = purchaseId, purchaseRepository = purchaseRepository, productRepository = purchaseProductRepository))
+            val detailViewModel: PurchaseDetailViewModel = viewModel(
+                factory = PurchaseDetailViewModelFactory(
+                    purchaseId = purchaseId, 
+                    purchaseRepository = purchaseRepository, 
+                    productRepository = purchaseProductRepository,
+                    documentRuntime = documentRuntime
+                )
+            )
             PurchaseDetailScreen(viewModel = detailViewModel, onBack = { navController.popBackStack() }, onDashboard = { navController.navigate("dashboard") }, onEditPurchase = { id -> navController.navigate("purchase_edit/$id") })
         }
 
@@ -799,7 +1157,76 @@ fun AppNavigation() {
                 onDashboard = { navController.navigate("dashboard") },
                 onStockRegisterClick = { navController.navigate("stock_register") },
                 onSerialStockRegisterClick = { navController.navigate("serial_stock_register") },
-                onOpeningStockClick = { navController.navigate("opening_stock_list") }
+                onOpeningStockClick = { navController.navigate("opening_stock_list") },
+                onStockAdjustmentClick = { navController.navigate("stock_adjustment") },
+                onStockReconciliationClick = { navController.navigate("stock_reconciliation") },
+                onAlertSettingsClick = { navController.navigate("inventory_alert_settings") }
+            )
+        }
+
+        composable(route = "stock_adjustment") {
+            val adjustmentViewModel: StockAdjustmentViewModel = viewModel(
+                factory = object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        return StockAdjustmentViewModel(
+                            productRepository = purchaseProductRepository,
+                            useCase = stockAdjustmentUseCase
+                        ) as T
+                    }
+                }
+            )
+            StockAdjustmentScreen(
+                viewModel = adjustmentViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(route = "stock_reconciliation") {
+            val reconciliationViewModel: StockReconciliationViewModel = viewModel(
+                factory = object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        return StockReconciliationViewModel(
+                            productRepository = purchaseProductRepository,
+                            useCase = stockReconciliationUseCase
+                        ) as T
+                    }
+                }
+            )
+            StockReconciliationScreen(
+                viewModel = reconciliationViewModel,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(route = "low_stock_status") {
+            val lowStockViewModel: LowStockStatusViewModel = viewModel(
+                factory = LowStockStatusViewModelFactory(lowStockUseCase)
+            )
+            LowStockStatusScreen(
+                viewModel = lowStockViewModel,
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") },
+                onPurchaseEntry = { navController.navigate("purchase_order_new") },
+                onPurchaseEntryWithParams = { productId, power, qty ->
+                    navController.navigate("purchase_order_new_from_shortage?pid=$productId&pwr=$power&q=$qty")
+                },
+                onThresholdSettings = { navController.navigate("inventory_alert_settings") }
+            )
+        }
+
+        composable(route = "inventory_alert_settings") {
+            val thresholdViewModel: InventoryThresholdViewModel = viewModel(
+                factory = InventoryThresholdViewModelFactory(
+                    productDao = purchaseDatabase.productDao(),
+                    thresholdRepository = thresholdRepository,
+                    stockUseCase = stockEngine
+                )
+            )
+            InventoryThresholdScreen(
+                viewModel = thresholdViewModel,
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -807,7 +1234,7 @@ fun AppNavigation() {
             val stockRegisterViewModel: StockRegisterViewModel = viewModel(factory = object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return StockRegisterViewModel(repository = InventoryStockRepository(inventoryStockDao = purchaseDatabase.inventoryStockDao(), productDao = purchaseDatabase.productDao())) as T
+                    return StockRegisterViewModel(repository = inventoryStockRepository) as T
                 }
             })
             StockRegisterScreen(viewModel = stockRegisterViewModel, onBack = { navController.popBackStack() }, onDashboard = { navController.navigate("dashboard") })
@@ -815,7 +1242,12 @@ fun AppNavigation() {
 
         composable(route = "serial_stock_register") {
             val serialStockViewModel: SerialStockViewModel = viewModel(factory = SerialStockViewModelFactory(repository = SerialStockRepository(serialStockDao = purchaseDatabase.serialStockDao())))
-            SerialStockRegisterScreen(viewModel = serialStockViewModel, onBack = { navController.popBackStack() }, onSerialClick = { inventoryUnitId -> navController.navigate("serial_movement_history/$inventoryUnitId") })
+            SerialStockRegisterScreen(
+                viewModel = serialStockViewModel,
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") },
+                onSerialClick = { inventoryUnitId -> navController.navigate("serial_movement_history/$inventoryUnitId") }
+            )
         }
 
         composable(route = "serial_movement_history/{unitId}", arguments = listOf(navArgument("unitId") { type = NavType.LongType })) { backStackEntry ->
@@ -828,7 +1260,12 @@ fun AppNavigation() {
             val openingStockViewModel: OpeningStockViewModel = viewModel(factory = object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return OpeningStockViewModel(repository = openingStockRepository, useCase = openingStockUseCase, productMasterRepository = purchaseProductRepository) as T
+                    return OpeningStockViewModel(
+                        repository = openingStockRepository,
+                        useCase = openingStockUseCase,
+                        productMasterRepository = purchaseProductRepository,
+                        numberingRepository = numberingRepository
+                    ) as T
                 }
             })
             OpeningStockListScreen(viewModel = openingStockViewModel, onBack = { navController.popBackStack() }, onNewEntry = { navController.navigate("opening_stock_entry/0") }, onEditEntry = { id -> navController.navigate("opening_stock_entry/$id") })
@@ -839,24 +1276,72 @@ fun AppNavigation() {
             val openingStockViewModel: OpeningStockViewModel = viewModel(factory = object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return OpeningStockViewModel(repository = openingStockRepository, useCase = openingStockUseCase, productMasterRepository = purchaseProductRepository) as T
+                    return OpeningStockViewModel(
+                        repository = openingStockRepository,
+                        useCase = openingStockUseCase,
+                        productMasterRepository = purchaseProductRepository,
+                        numberingRepository = numberingRepository
+                    ) as T
                 }
             })
-            OpeningStockEntryScreen(viewModel = openingStockViewModel, onAddItemClick = { navController.navigate("add_opening_stock_item") }, onBack = { navController.popBackStack() }, onDashboard = { navController.navigate("dashboard") })
+            OpeningStockEntryScreen(
+                stockId = stockId,
+                viewModel = openingStockViewModel,
+                onAddItemClick = { navController.navigate("add_opening_stock_item") },
+                onBack = { navController.popBackStack() },
+                onDashboard = { navController.navigate("dashboard") }
+            )
         }
 
         composable(route = "add_opening_stock_item") {
-            val openingStockViewModel: OpeningStockViewModel = viewModel(factory = object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    return OpeningStockViewModel(repository = openingStockRepository, useCase = openingStockUseCase, productMasterRepository = purchaseProductRepository) as T
-                }
-            })
-            AddOpeningStockItemScreen(productRepository = purchaseProductRepository, onAddItem = { item -> openingStockViewModel.addItem(item); navController.popBackStack() }, onBack = { navController.popBackStack() })
+            val parentEntry = navController.previousBackStackEntry
+            val openingStockViewModel: OpeningStockViewModel = if (parentEntry != null) {
+                viewModel(viewModelStoreOwner = parentEntry)
+            } else {
+                viewModel(factory = object : ViewModelProvider.Factory {
+                    @Suppress("UNCHECKED_CAST")
+                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                        return OpeningStockViewModel(
+                            repository = openingStockRepository,
+                            useCase = openingStockUseCase,
+                            productMasterRepository = purchaseProductRepository,
+                            numberingRepository = numberingRepository
+                        ) as T
+                    }
+                })
+            }
+            AddOpeningStockItemScreen(
+                productRepository = purchaseProductRepository, 
+                onAddItem = { items -> 
+                    items.forEach { openingStockViewModel.addItem(it) }
+                    navController.popBackStack() 
+                }, 
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(route = "payment_home") {
-            PaymentHomeScreen(onBack = { navController.popBackStack() }, onReceiptClick = { navController.navigate("payment_entry/RECEIPT") }, onPaymentClick = { navController.navigate("payment_entry/PAYMENT") }, onReceiptRegisterClick = { navController.navigate("payment_register/RECEIPT") }, onPaymentRegisterClick = { navController.navigate("payment_register/PAYMENT") })
+            PaymentHomeScreen(
+                onBack = { navController.popBackStack() }, 
+                onReceiptClick = { navController.navigate("payment_entry/RECEIPT") }, 
+                onPaymentClick = { navController.navigate("payment_entry/PAYMENT") }, 
+                onReceiptRegisterClick = { navController.navigate("payment_register/RECEIPT") }, 
+                onPaymentRegisterClick = { navController.navigate("payment_register/PAYMENT") },
+                onReceivablesEnquiryClick = { navController.navigate("receivables_enquiry") }
+            )
+        }
+
+        composable(route = "receivables_enquiry") {
+            val receivablesViewModel: ReceivablesViewModel = viewModel(
+                factory = ReceivablesViewModelFactory(reportingUseCase = reportingUseCase)
+            )
+            ReceivablesEnquiryScreen(
+                viewModel = receivablesViewModel,
+                onBack = { navController.popBackStack() },
+                onPartyClick = { partyId ->
+                    navController.navigate("financial_report/customer_ledger?partyId=$partyId")
+                }
+            )
         }
 
         composable(route = "payment_entry/{type}", arguments = listOf(navArgument("type") { type = NavType.StringType })) { backStackEntry ->
@@ -898,12 +1383,8 @@ fun AppNavigation() {
                 repository = financialTransactionRepository, 
                 onBack = { navController.popBackStack() }, 
                 onViewDetail = { transactionId -> navController.navigate("payment_detail/$transactionId") }, 
-                onDuplicate = { transactionId -> 
-                    paymentViewModel.duplicateTransaction(transactionId)
-                    navController.navigate("payment_entry/$type")
-                }, 
                 onEditDraft = { transactionId -> 
-                    paymentViewModel.loadDraft(transactionId)
+                    paymentViewModel.loadForEdit(transactionId)
                     navController.navigate("payment_entry/$type")
                 }
             )
@@ -928,9 +1409,9 @@ fun AppNavigation() {
                 transactionId = transactionId, 
                 viewModel = paymentViewModel, 
                 onBack = { navController.popBackStack() }, 
-                onDuplicate = { 
-                    paymentViewModel.duplicateTransaction(transactionId)
-                    navController.navigate("payment_home") // Then they pick type? Or just assume same type
+                onDashboard = { navController.navigate("dashboard") },
+                onEdit = { id, type ->
+                    navController.navigate("payment_entry/$type") 
                 }
             )
         }
@@ -946,11 +1427,11 @@ fun AppNavigation() {
 
         composable(route = "gst_reports/{type}", arguments = listOf(navArgument("type") { type = NavType.StringType })) { backStackEntry ->
             val type = backStackEntry.arguments?.getString("type") ?: GstReportType.GSTR1.routeKey
-            val gstReportsViewModel: GstReportsViewModel = viewModel(factory = GstReportsViewModelFactory(repository = GstReportingRepository(salesRepository = salesRepository, purchaseRepository = purchaseRepository, salesCreditNoteRepository = salesCreditNoteRepository)))
+            val gstReportsViewModel: GstReportsViewModel = viewModel(factory = GstReportsViewModelFactory(repository = GstReportingRepository(salesRepository = salesRepository, purchaseRepository = purchaseRepository, salesCreditNoteRepository = salesCreditNoteRepository, productRepository = salesProductRepository)))
             GstReportScreen(reportType = GstReportType.fromRouteKey(type), viewModel = gstReportsViewModel, financialYearStart = currentFinancialYear, financialYearDisplayName = "${currentFinancialYear}-${currentFinancialYear + 1}", onBack = { navController.popBackStack() }, onDashboard = { navController.navigate("dashboard") })
         }
 
-        salesReportsGraph(navController = navController, database = purchaseDatabase)
+        salesReportsGraph(navController = navController, database = purchaseDatabase, lowStockUseCase = lowStockUseCase)
 
         composable(route = "settings_home") {
             SessionGuard(onSessionExpired = { navController.navigate("login") { popUpTo("splash") { inclusive = true }; launchSingleTop = true } }) {

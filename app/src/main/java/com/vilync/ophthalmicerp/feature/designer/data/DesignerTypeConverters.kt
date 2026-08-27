@@ -1,8 +1,8 @@
 package com.vilync.ophthalmicerp.feature.designer.data
 
 import androidx.room.TypeConverter
-import com.vilync.ophthalmicerp.feature.designer.domain.model.DesignerDocumentType
-import com.vilync.ophthalmicerp.feature.designer.domain.model.TemplateStatus
+import com.vilync.ophthalmicerp.core.document.domain.DesignerDocumentType
+import com.vilync.ophthalmicerp.core.document.domain.TemplateStatus
 
 /**
  * Type converters for Document Designer enums.

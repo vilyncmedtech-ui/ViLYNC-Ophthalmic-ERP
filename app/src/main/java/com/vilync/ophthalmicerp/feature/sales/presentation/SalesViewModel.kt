@@ -6,9 +6,12 @@ import com.vilync.ophthalmicerp.data.entity.SaleEntity
 import com.vilync.ophthalmicerp.data.entity.SaleItemEntity
 import com.vilync.ophthalmicerp.data.entity.SaleLensEntity
 import com.vilync.ophthalmicerp.data.repository.ChallanRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentNumberingRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentType
 import com.vilync.ophthalmicerp.data.repository.InventoryRepository
 import com.vilync.ophthalmicerp.data.repository.ProductRepository
 import com.vilync.ophthalmicerp.data.repository.SalesRepository
+import com.vilync.ophthalmicerp.data.repository.SampleIssueRepository
 import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
 import com.vilync.ophthalmicerp.feature.master.party.model.PartyType
 import com.vilync.ophthalmicerp.feature.master.party.model.PartyMaster
@@ -19,6 +22,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.round
 
@@ -34,6 +38,10 @@ class SalesViewModel(
     private val inventoryRepository: InventoryRepository,
 
     private val challanRepository: ChallanRepository,
+
+    private val sampleIssueRepository: SampleIssueRepository,
+
+    private val numberingRepository: DocumentNumberingRepository,
     private val editSaleId: Long? = null
 
 ) : ViewModel() {
@@ -70,6 +78,13 @@ class SalesViewModel(
 
     init {
         observeMasterAndInventoryData()
+        
+        // Initial Invoice Number Preview
+        if (editSaleId == null) {
+            val today = java.util.Calendar.getInstance()
+            val fyStart = numberingRepository.getFinancialYearStart(today)
+            updateFinancialYearStart(fyStart)
+        }
     }
 
 
@@ -96,8 +111,8 @@ class SalesViewModel(
             }
                 .catch { exception ->
 
-                    _uiState.value =
-                        _uiState.value.copy(
+                    _uiState.update { 
+                        it.copy(
                             isLoading = false,
                             errorMessage =
                                 exception.message
@@ -106,6 +121,7 @@ class SalesViewModel(
                                     }
                                     ?: "Unable to load Sales data."
                         )
+                    }
                 }
                 .collectLatest {
                         (
@@ -127,20 +143,14 @@ class SalesViewModel(
                                             )
                         }
 
-                    _uiState.value =
-                        _uiState.value.copy(
-                            customers =
-                                eligibleCustomers,
-
-                            products =
-                                products,
-
-                            inStockUnits =
-                                inventoryUnits,
-
-                            isLoading =
-                                false
+                    _uiState.update { 
+                        it.copy(
+                            customers = eligibleCustomers,
+                            products = products,
+                            inStockUnits = inventoryUnits,
+                            isLoading = false
                         )
+                    }
 
                     if (
                         editSaleId != null &&
@@ -161,8 +171,8 @@ class SalesViewModel(
     fun selectCustomer(
         customer: PartyMaster
     ) {
-        _uiState.value =
-            _uiState.value.copy(
+        _uiState.update { state ->
+            state.copy(
                 selectedCustomer =
                     customer,
 
@@ -204,6 +214,8 @@ class SalesViewModel(
                 gstSupplyType =
                     "",
 
+                selectedChallanItemIds = emptySet(),
+
                 isDirty =
                     true,
 
@@ -219,6 +231,7 @@ class SalesViewModel(
                 successMessage =
                     null
             )
+        }
         observePendingChallansForCustomer(customer.id)
     }
 
@@ -226,44 +239,21 @@ class SalesViewModel(
     fun updateCustomerSearchQuery(
         value: String
     ) {
-
-        val state =
-            _uiState.value
-
-        _uiState.value =
+        _uiState.update { state ->
             state.copy(
-                customerSearchQuery =
-                    value,
-
-                selectedCustomer =
-                    if (
-                        state.selectedCustomer
-                            ?.partyName
-                            ?.equals(
-                                other = value,
-                                ignoreCase = true
-                            ) == true
-                    ) {
-                        state.selectedCustomer
-                    } else {
-                        null
-                    },
-
-                isDirty =
-                    true,
-
-                isSaved =
-                    false,
-
-                isSavedSuccessfully =
-                    false,
-
-                errorMessage =
-                    null,
-
-                successMessage =
+                customerSearchQuery = value,
+                selectedCustomer = if (state.selectedCustomer?.partyName?.equals(value, ignoreCase = true) == true) {
+                    state.selectedCustomer
+                } else {
                     null
+                },
+                isDirty = true,
+                isSaved = false,
+                isSavedSuccessfully = false,
+                errorMessage = null,
+                successMessage = null
             )
+        }
         if (_uiState.value.selectedCustomer == null) stopAndClearChallanState()
     }
 
@@ -509,54 +499,47 @@ class SalesViewModel(
     fun updateInvoiceDate(
         value: String
     ) {
-
-        _uiState.value =
-            _uiState.value.copy(
-                invoiceDate =
-                    value,
-
-                isDirty =
-                    true,
-
-                isSaved =
-                    false,
-
-                isSavedSuccessfully =
-                    false,
-
-                errorMessage =
-                    null,
-
-                successMessage =
-                    null
+        _uiState.update { 
+            it.copy(
+                invoiceDate = value,
+                isDirty = true,
+                isSaved = false,
+                isSavedSuccessfully = false,
+                errorMessage = null,
+                successMessage = null
             )
+        }
     }
 
 
     fun updateFinancialYearStart(
         value: Int
     ) {
-
-        _uiState.value =
-            _uiState.value.copy(
-                financialYearStart =
-                    value,
-
-                isDirty =
-                    true,
-
-                isSaved =
-                    false,
-
-                isSavedSuccessfully =
-                    false,
-
-                errorMessage =
-                    null,
-
-                successMessage =
-                    null
+        _uiState.update { state ->
+            state.copy(
+                financialYearStart = value,
+                isDirty = true,
+                isSaved = false,
+                isSavedSuccessfully = false,
+                errorMessage = null,
+                successMessage = null
             )
+        }
+        
+        if (!_uiState.value.isEditMode) {
+            refreshInvoiceNumberPreview(value)
+        }
+    }
+
+    private fun refreshInvoiceNumberPreview(fyStart: Int) {
+        viewModelScope.launch {
+            try {
+                val preview = numberingRepository.peekNextDocumentNumber(DocumentType.INVOICE, fyStart)
+                _uiState.update { it.copy(nextInvoiceNumberPreview = preview) }
+            } catch (e: Exception) {
+                // Silently fail preview
+            }
+        }
     }
 
 
@@ -655,6 +638,42 @@ class SalesViewModel(
     }
 
     fun clearSelectedChallanItems() { _uiState.value = _uiState.value.copy(selectedChallanItemIds = emptySet(), challanSerialMatches = emptyList(), showChallanSerialMatchSelection = false, isDirty = true, isSaved = false, isSavedSuccessfully = false, errorMessage = null, successMessage = null) }
+
+    fun addSelectedChallanItemsToInvoice() {
+        val state = _uiState.value
+        val selectedItems = state.selectedChallanItems
+        if (selectedItems.isEmpty()) return
+
+        val newItems = selectedItems.map { ci ->
+            SalesEntryItem(
+                localId = nextLocalItemId++,
+                productId = ci.productId,
+                productName = ci.productName,
+                power = ci.power,
+                quantity = 1,
+                rate = ci.rate,
+                discountPercent = 0.0,
+                discountAmount = 0.0,
+                taxableAmount = ci.rate,
+                gstPercent = ci.gstPercent,
+                gstAmount = ci.rate * (ci.gstPercent / 100.0),
+                totalAmount = ci.rate * (1 + ci.gstPercent / 100.0),
+                selectedUnits = listOf(
+                    SalesSelectedInventoryUnit(
+                        inventoryUnitId = ci.inventoryUnitId,
+                        serialNumber = ci.serialNumber,
+                        power = ci.power,
+                        batchNumber = ci.batchNumber,
+                        expiryDate = ci.expiryDate,
+                        sourceChallanItemId = ci.id
+                    )
+                )
+            )
+        }
+
+        updateItemsAndSummary(state.items + newItems, clearCurrentEntry = false)
+        _uiState.update { it.copy(selectedChallanItemIds = emptySet()) }
+    }
 
 
     // =========================================================
@@ -801,23 +820,48 @@ class SalesViewModel(
 
         viewModelScope.launch {
             try {
-                val matches = inventoryRepository.smartSearchInStockSerial(
+                // 1. Search in live stock
+                val stockMatches = inventoryRepository.smartSearchInStockSerial(
                     serialQuery = normalizedSerial
                 )
+
+                // 2. Search in evaluated samples for this customer
+                val customerId = _uiState.value.selectedCustomer?.id ?: 0L
+                val sampleMatches = if (customerId > 0L) {
+                    sampleIssueRepository.findEvaluatedSampleItemsForCustomer(customerId, normalizedSerial)
+                } else emptyList<com.vilync.ophthalmicerp.data.entity.SampleIssueItemEntity>()
+
                 val state = _uiState.value
                 val inventoryIdsAlreadyAdded = state.items
                     .asSequence()
                     .flatMap { it.selectedUnits.asSequence() }
                     .map { it.inventoryUnitId }
                     .toSet()
-                val availableMatches = matches.filter {
+
+                // Filter out already added items from stock matches
+                val availableStockMatches = stockMatches.filter {
                     it.id !in inventoryIdsAlreadyAdded
                 }
+                
+                // Map sample items to a common format or handle them separately
+                // Actually, the UI expects InventoryUnitEntity for smartSerialMatches
+                // So I should fetch the InventoryUnitEntity for these sample matches.
+                val availableSampleUnits = mutableListOf<com.vilync.ophthalmicerp.data.entity.InventoryUnitEntity>()
+                sampleMatches.forEach { item ->
+                    if (item.inventoryUnitId !in inventoryIdsAlreadyAdded) {
+                        inventoryRepository.getById(item.inventoryUnitId)?.let {
+                            availableSampleUnits.add(it)
+                        }
+                    }
+                }
+
+                val allAvailableMatches = (availableStockMatches + availableSampleUnits).distinctBy { it.id }
 
                 when {
-                    availableMatches.isEmpty() -> {
-                        val matchedButAlreadyAdded = matches.isNotEmpty() &&
-                                matches.all { it.id in inventoryIdsAlreadyAdded }
+                    allAvailableMatches.isEmpty() -> {
+                        val matchedButAlreadyAdded = (stockMatches.isNotEmpty() && stockMatches.all { it.id in inventoryIdsAlreadyAdded }) ||
+                                                     (sampleMatches.isNotEmpty() && sampleMatches.all { it.inventoryUnitId in inventoryIdsAlreadyAdded })
+                        
                         _uiState.value = _uiState.value.copy(
                             isSmartSerialSearching = false,
                             smartSerialMatches = emptyList(),
@@ -825,18 +869,20 @@ class SalesViewModel(
                             errorMessage = if (matchedButAlreadyAdded) {
                                 "Matching Serial / Unique ID is already added to this invoice."
                             } else {
-                                "No matching in-stock Serial / Unique ID found."
+                                "No matching in-stock or evaluated sample Serial / Unique ID found."
                             },
                             successMessage = null
                         )
                     }
-                    availableMatches.size == 1 -> {
-                        applySmartSerialSelection(availableMatches.first())
+                    allAvailableMatches.size == 1 -> {
+                        val unit = allAvailableMatches.first()
+                        val sampleItem = sampleMatches.find { it.inventoryUnitId == unit.id }
+                        applySmartSerialSelection(unit, sampleItem?.id)
                     }
                     else -> {
                         _uiState.value = _uiState.value.copy(
                             isSmartSerialSearching = false,
-                            smartSerialMatches = availableMatches,
+                            smartSerialMatches = allAvailableMatches,
                             showSmartSerialMatchSelection = true,
                             errorMessage = null,
                             successMessage = null
@@ -863,7 +909,16 @@ class SalesViewModel(
         val inventoryUnit = _uiState.value.smartSerialMatches
             .firstOrNull { it.id == inventoryUnitId }
             ?: return
-        applySmartSerialSelection(inventoryUnit)
+            
+        viewModelScope.launch {
+            val customerId = _uiState.value.selectedCustomer?.id ?: 0L
+            val sampleItems = if (customerId > 0L) {
+                sampleIssueRepository.findEvaluatedSampleItemsForCustomer(customerId, inventoryUnit.serialNumber)
+            } else emptyList<com.vilync.ophthalmicerp.data.entity.SampleIssueItemEntity>()
+            
+            val sampleItem = sampleItems.find { it.inventoryUnitId == inventoryUnitId }
+            applySmartSerialSelection(inventoryUnit, sampleItem?.id)
+        }
     }
 
     fun dismissSmartSerialMatches() {
@@ -875,7 +930,8 @@ class SalesViewModel(
     }
 
     private fun applySmartSerialSelection(
-        inventoryUnit: com.vilync.ophthalmicerp.data.entity.InventoryUnitEntity
+        inventoryUnit: com.vilync.ophthalmicerp.data.entity.InventoryUnitEntity,
+        sourceSampleIssueItemId: Long? = null
     ) {
         val state = _uiState.value
         val alreadyAdded = state.items
@@ -925,7 +981,13 @@ class SalesViewModel(
             errorMessage = null,
             successMessage = null
         )
+        
+        // Temporarily store the source sample issue item id if any
+        // We'll need this when adding the item to the list.
+        currentSourceSampleIssueItemId = sourceSampleIssueItemId
     }
+    
+    private var currentSourceSampleIssueItemId: Long? = null
 
 
     fun toggleInventoryUnit(
@@ -1329,7 +1391,10 @@ class SalesViewModel(
                         unit.batchNumber.trim(),
 
                     expiryDate =
-                        unit.expiryDate.trim()
+                        unit.expiryDate.trim(),
+
+                    sourceSampleIssueItemId =
+                        currentSourceSampleIssueItemId
                 )
             }
 
@@ -1386,6 +1451,8 @@ class SalesViewModel(
             clearCurrentEntry =
                 true
         )
+        
+        currentSourceSampleIssueItemId = null
     }
 
 
@@ -1786,7 +1853,7 @@ class SalesViewModel(
                 .trim()
 
 
-        if (invoiceNumber.isBlank()) {
+        if (invoiceNumber.isBlank() && state.isEditMode) {
 
             showError(
                 "Sales Invoice Number is required."
@@ -2208,7 +2275,10 @@ class SalesViewModel(
                                         unit.batchNumber.trim(),
 
                                     expiryDate =
-                                        unit.expiryDate.trim()
+                                        unit.expiryDate.trim(),
+
+                                    sourceChallanItemId =
+                                        unit.sourceChallanItemId
                                 )
                             }
 

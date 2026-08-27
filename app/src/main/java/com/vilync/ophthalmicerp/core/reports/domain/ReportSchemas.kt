@@ -33,10 +33,10 @@ object ReportSchemas {
             ReportFilterDescriptor(id = "date_to", label = "Date To", type = FilterType.DATE_RANGE, icon = Icons.Default.CalendarMonth, section = "PERIOD", weight = 0.5f, defaultValue = "2026-07-31"),
             
             // PARTY
-            ReportFilterDescriptor(id = "customer", label = "Customer", type = FilterType.DROPDOWN, icon = Icons.Default.Person, section = "PARTY", weight = 1f, defaultValue = "All Customers"),
+            ReportFilterDescriptor(id = "customer", label = "Customer", type = FilterType.DROPDOWN, icon = Icons.Default.Person, section = "PARTY", weight = 1f, defaultValue = "0"),
             
             // PRODUCT
-            ReportFilterDescriptor(id = "product", label = "Product", type = FilterType.DROPDOWN, icon = Icons.Default.Inventory, section = "PRODUCT", defaultValue = "All Products"),
+            ReportFilterDescriptor(id = "product", label = "Product", type = FilterType.DROPDOWN, icon = Icons.Default.Inventory, section = "PRODUCT", defaultValue = "0"),
             
             // TRANSACTION
             ReportFilterDescriptor(
@@ -104,7 +104,7 @@ object ReportSchemas {
                 label = "Product Type",
                 type = FilterType.DROPDOWN,
                 icon = Icons.Default.Inventory,
-                defaultValue = "All Products",
+                defaultValue = "0",
                 weight = 0.5f,
                 enableSearch = true
             ),
@@ -159,7 +159,7 @@ object ReportSchemas {
                     "All", "PURCHASE_RECEIVED", "SOLD", "SALES_RETURN", "CHALLAN_ISSUED", "SAMPLE_ISSUED", "DEMO_ISSUED", "SALE_EDIT_RETURN", "SALE_EDIT_SOLD"
                 )
             ),
-            ReportFilterDescriptor(id = "product", label = "Product", type = FilterType.DROPDOWN, icon = Icons.Default.Inventory, defaultValue = "All Products", enableSearch = true),
+            ReportFilterDescriptor(id = "product", label = "Product", type = FilterType.DROPDOWN, icon = Icons.Default.Inventory, defaultValue = "0", enableSearch = true),
             ReportFilterDescriptor(id = "power", label = "Power", type = FilterType.DROPDOWN, icon = Icons.Default.Bolt, defaultValue = "All"),
             ReportFilterDescriptor(id = "customer", label = "Customer", type = FilterType.AUTOCOMPLETE, icon = Icons.Default.Person, defaultValue = "0"),
             ReportFilterDescriptor(id = "vendor", label = "Vendor", type = FilterType.AUTOCOMPLETE, icon = Icons.Default.Store, defaultValue = "0")
@@ -174,8 +174,8 @@ object ReportSchemas {
 
     val InventoryAgeingSchema = ReportSchema(
         id = "inventory_ageing",
-        title = "Inventory Ageing",
-        subtitle = "Stock classification by shelf days",
+        title = "Inventory Expiry Risk",
+        subtitle = "Stock classification by expiry remaining days",
         icon = "⏳",
         columns = listOf(
             ReportColumn(id = "product", displayName = "Product", weight = 2.0f),
@@ -183,32 +183,32 @@ object ReportSchemas {
             ReportColumn(id = "power", displayName = "Power", weight = 0.8f),
             ReportColumn(id = "batch", displayName = "Batch No", weight = 1.2f),
             ReportColumn(id = "serial", displayName = "Serial No", weight = 1.5f),
-            ReportColumn(id = "receivedDate", displayName = "Rec. Date", weight = 1.0f),
-            ReportColumn(id = "ageDays", displayName = "Age (Days)", weight = 0.8f, type = ColumnType.NUMBER),
-            ReportColumn(id = "bucket", displayName = "Age Bucket", weight = 1.2f, type = ColumnType.STATUS),
+            ReportColumn(id = "expiryDate", displayName = "EXPIRY DATE", weight = 1.0f),
+            ReportColumn(id = "daysLeft", displayName = "DAYS LEFT", weight = 0.8f, type = ColumnType.NUMBER),
+            ReportColumn(id = "expiryStatus", displayName = "EXPIRY STATUS", weight = 1.2f, type = ColumnType.STATUS),
             ReportColumn(id = "status", displayName = "Status", weight = 1.0f, type = ColumnType.STATUS),
             ReportColumn(id = "location", displayName = "Location", weight = 1.0f)
         ),
         filters = listOf(
-            ReportFilterDescriptor(id = "product", label = "Product", type = FilterType.DROPDOWN, icon = Icons.Default.Inventory, defaultValue = "All Products", enableSearch = true),
+            ReportFilterDescriptor(id = "product", label = "Product", type = FilterType.DROPDOWN, icon = Icons.Default.Inventory, defaultValue = "0", enableSearch = true),
             ReportFilterDescriptor(id = "category", label = "Category", type = FilterType.DROPDOWN, icon = Icons.Default.Category, defaultValue = "All Categories"),
             ReportFilterDescriptor(id = "power", label = "Power", type = FilterType.DROPDOWN, icon = Icons.Default.Bolt, defaultValue = "All"),
             ReportFilterDescriptor(id = "batch", label = "Batch", type = FilterType.SEARCH_BAR, icon = Icons.Default.Numbers),
             ReportFilterDescriptor(id = "vendor", label = "Vendor", type = FilterType.AUTOCOMPLETE, icon = Icons.Default.Store, defaultValue = "0"),
             ReportFilterDescriptor(
-                id = "bucket", 
-                label = "Age Bucket", 
+                id = "expiry_risk", 
+                label = "Expiry Risk", 
                 type = FilterType.DROPDOWN, 
                 icon = Icons.Default.Timer, 
                 defaultValue = "All",
-                options = listOf("All", "0-30 Days", "31-60 Days", "61-90 Days", "91-180 Days", "180+ Days")
+                options = listOf("All", "Fresh", "Sensitive", "On Risk", "High Risk", "Expired")
             )
         ),
         summaries = listOf(
             SummaryCardConfig(id = "total_stock", label = "Total Stock", icon = Icons.Default.Inventory2, backgroundColor = Color(0xFFF0F9FF), valueColor = Color(0xFF026AA2)),
-            SummaryCardConfig(id = "fresh_stock", label = "Fresh Stock (0-30)", icon = Icons.Default.Eco, backgroundColor = Color(0xFFECFDF3), valueColor = Color(0xFF027A48)),
-            SummaryCardConfig(id = "slow_moving", label = "Slow (91-180)", icon = Icons.Default.TrendingDown, backgroundColor = Color(0xFFFFF5E9), valueColor = Color(0xFFC96A12)),
-            SummaryCardConfig(id = "dead_stock", label = "Dead (180+)", icon = Icons.Default.Warning, backgroundColor = Color(0xFFFFEEEE), valueColor = Color(0xFFB83A3A))
+            SummaryCardConfig(id = "fresh_stock", label = "Fresh Stock (>365)", icon = Icons.Default.Eco, backgroundColor = Color(0xFFECFDF3), valueColor = Color(0xFF027A48)),
+            SummaryCardConfig(id = "high_risk", label = "High Risk (1-90)", icon = Icons.Default.TrendingDown, backgroundColor = Color(0xFFFFF5E9), valueColor = Color(0xFFC96A12)),
+            SummaryCardConfig(id = "expired", label = "Expired (≤0)", icon = Icons.Default.Warning, backgroundColor = Color(0xFFFFEEEE), valueColor = Color(0xFFB83A3A))
         )
     )
 
@@ -237,14 +237,46 @@ object ReportSchemas {
                 type = FilterType.DROPDOWN, 
                 icon = Icons.Default.NotificationImportant, 
                 defaultValue = "All",
-                options = listOf("All", "OUT_OF_STOCK", "CRITICAL", "LOW", "HEALTHY")
+                options = listOf("All", "OUT_OF_STOCK", "LOW_STOCK", "REORDER", "HEALTHY")
             )
         ),
         summaries = listOf(
             SummaryCardConfig(id = "total", label = "Total Items", icon = Icons.Default.List, backgroundColor = Color(0xFFF0F9FF), valueColor = Color(0xFF026AA2)),
             SummaryCardConfig(id = "outOfStock", label = "Out of Stock", icon = Icons.Default.Cancel, backgroundColor = Color(0xFFFFEEEE), valueColor = Color(0xFFB83A3A)),
-            SummaryCardConfig(id = "critical", label = "Critical Stock", icon = Icons.Default.Report, backgroundColor = Color(0xFFFFF5E9), valueColor = Color(0xFFC96A12)),
-            SummaryCardConfig(id = "low", label = "Low Stock", icon = Icons.Default.Warning, backgroundColor = Color(0xFFFEFBE8), valueColor = Color(0xFFB54708))
+            SummaryCardConfig(id = "lowStock", label = "Low Stock", icon = Icons.Default.Report, backgroundColor = Color(0xFFFFF5E9), valueColor = Color(0xFFC96A12)),
+            SummaryCardConfig(id = "reorder", label = "Reorder Level", icon = Icons.Default.Warning, backgroundColor = Color(0xFFFEFBE8), valueColor = Color(0xFFB54708))
+        )
+    )
+
+    val LensLibraryStatusSchema = ReportSchema(
+        id = "lens_library_status",
+        title = "Lens Library Status",
+        subtitle = "Reconcile lenses issued to Surgeon Libraries",
+        icon = "L",
+        columns = listOf(
+            ReportColumn(id = "product", displayName = "Product", weight = 2.5f),
+            ReportColumn(id = "power", displayName = "Power", weight = 1.0f),
+            ReportColumn(id = "issued", displayName = "Issued", weight = 0.8f, type = ColumnType.NUMBER),
+            ReportColumn(id = "invoiced", displayName = "Invoiced", weight = 1.0f, type = ColumnType.NUMBER),
+            ReportColumn(id = "balance", displayName = "Balance", weight = 1.0f, type = ColumnType.NUMBER),
+            ReportColumn(id = "serials", displayName = "Serial Details", weight = 4.0f) // Drill-down details
+        ),
+        filters = listOf(
+            // Row 1
+            ReportFilterDescriptor(id = "date_from", label = "Challan Date From", type = FilterType.DATE_RANGE, icon = Icons.Default.CalendarToday, weight = 0.5f, defaultValue = "2026-04-01"),
+            ReportFilterDescriptor(id = "date_to", label = "Challan Date To", type = FilterType.DATE_RANGE, icon = Icons.Default.CalendarMonth, weight = 0.5f, defaultValue = "2027-03-31"),
+            
+            // Row 2
+            ReportFilterDescriptor(id = "customer", label = "Account / Surgeon", type = FilterType.AUTOCOMPLETE, icon = Icons.Default.Person, weight = 1f, defaultValue = "0"),
+            
+            // Row 3
+            ReportFilterDescriptor(id = "product", label = "Product", type = FilterType.DROPDOWN, icon = Icons.Default.Inventory, weight = 0.5f, defaultValue = "0", enableSearch = true),
+            ReportFilterDescriptor(id = "power", label = "Power", type = FilterType.SEARCH_BAR, icon = Icons.Default.Numbers, weight = 0.5f, defaultValue = "")
+        ),
+        summaries = listOf(
+            SummaryCardConfig(id = "total_issued", label = "Total Issued", icon = Icons.Default.FileUpload, backgroundColor = Color(0xFFF0F9FF), valueColor = Color(0xFF026AA2)),
+            SummaryCardConfig(id = "total_invoiced", label = "Total Invoiced", icon = Icons.Default.CheckCircle, backgroundColor = Color(0xFFECFDF3), valueColor = Color(0xFF027A48)),
+            SummaryCardConfig(id = "library_balance", label = "Library Balance", icon = Icons.Default.AccountBalance, backgroundColor = Color(0xFFFFF5E9), valueColor = Color(0xFFC96A12))
         )
     )
 }

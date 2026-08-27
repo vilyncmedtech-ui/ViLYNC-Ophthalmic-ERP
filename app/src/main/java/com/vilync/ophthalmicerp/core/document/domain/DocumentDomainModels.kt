@@ -1,9 +1,5 @@
 package com.vilync.ophthalmicerp.core.document.domain
 
-import com.vilync.ophthalmicerp.feature.designer.domain.model.DesignerDocumentType
-import com.vilync.ophthalmicerp.feature.designer.domain.model.JSON.TemplateLayout
-import com.vilync.ophthalmicerp.feature.designer.domain.model.TemplateStatus
-
 /**
  * Domain model for a Document Template.
  * Decoupled from Room persistence.
@@ -14,7 +10,9 @@ data class DocumentTemplate(
     val documentType: DesignerDocumentType,
     val description: String,
     val activeVersion: Int,
-    val status: TemplateStatus
+    val status: TemplateStatus,
+    val isDefault: Boolean = false,
+    val lastModified: Long = 0L
 )
 
 /**

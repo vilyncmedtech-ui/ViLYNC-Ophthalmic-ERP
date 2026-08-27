@@ -12,13 +12,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vilync.ophthalmicerp.ui.components.StandardDetailHeader
 
 @Composable
 fun PaymentDetailScreen(
     transactionId: Long,
     viewModel: PaymentViewModel,
     onBack: () -> Unit,
-    onDuplicate: (Long) -> Unit
+    onDashboard: () -> Unit,
+    onEdit: (Long, String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -30,73 +32,76 @@ fun PaymentDetailScreen(
 
     val tx = uiState.selectedTransaction
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF7F9FD))
-            .padding(20.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedButton(onClick = onBack) {
-                Text("← Back")
-            }
-            Text(
-                "Transaction Details",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF14233C)
+    Scaffold(
+        topBar = {
+            StandardDetailHeader(
+                title = if (tx?.type == "CUSTOMER_RECEIPT") "Receipt Detail" else "Payment Detail",
+                onBack = onBack,
+                onDashboard = onDashboard,
+                onPrint = { /* TODO: Payment Voucher Print if needed */ },
+                onPdf = { /* TODO: Payment Voucher PDF if needed */ }
             )
-            Spacer(modifier = Modifier.width(48.dp))
         }
-
-        if (uiState.isLoading || tx == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD9DEE8))
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DetailRowItem("Transaction No.", tx.id.toString())
-                    DetailRowItem("Date", tx.transactionDate)
-                    DetailRowItem("Type", tx.type)
-                    DetailRowItem("Party", uiState.selectedPartyName)
-                    DetailRowItem("Account", uiState.selectedAccountName)
-                    DetailRowItem("Amount", "₹ %.2f".format(tx.amount))
-                    DetailRowItem("Reference", tx.referenceNumber.ifBlank { "N/A" })
-                    DetailRowItem("Status", tx.status)
-                    DetailRowItem("Remarks", tx.remarks.ifBlank { "N/A" })
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF7F9FD))
+                .padding(padding)
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            if (uiState.isLoading || tx == null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
-            }
-
-            if (tx.status == "POSTED") {
-                Button(
-                    onClick = { showCancelDialog = true },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB42318))
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD9DEE8))
                 ) {
-                    Text("CANCEL TRANSACTION", fontWeight = FontWeight.Bold)
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (tx.documentNumber != null) {
+                            DetailRowItem("Receipt No.", tx.documentNumber, isProminent = true)
+                            HorizontalDivider(color = Color(0xFFF2F4F7))
+                        }
+                        DetailRowItem("Transaction ID", tx.id.toString())
+                        DetailRowItem("Date", tx.transactionDate)
+                        DetailRowItem("Type", tx.type)
+                        DetailRowItem("Party", uiState.selectedPartyName)
+                        DetailRowItem("Account", uiState.selectedAccountName)
+                        DetailRowItem("Amount", "₹ %.2f".format(tx.amount))
+                        DetailRowItem("Reference", tx.referenceNumber.ifBlank { "N/A" })
+                        DetailRowItem("Status", tx.status)
+                        DetailRowItem("Remarks", tx.remarks.ifBlank { "N/A" })
+                    }
                 }
-            }
 
-            Button(
-                onClick = { 
-                    viewModel.duplicateTransaction(transactionId)
-                    onDuplicate(transactionId)
-                },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF476EA8))
-            ) {
-                Text("DUPLICATE AS DRAFT", fontWeight = FontWeight.Bold)
+                if (tx.status == "POSTED") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = { 
+                                val navType = if (tx.type == "CUSTOMER_RECEIPT") "RECEIPT" else "PAYMENT"
+                                viewModel.loadForEdit(transactionId)
+                                onEdit(transactionId, navType)
+                            },
+                            modifier = Modifier.weight(1f).height(56.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF476EA8))
+                        ) {
+                            Text("EDIT TRANSACTION", fontWeight = FontWeight.Bold)
+                        }
+                        
+                        Button(
+                            onClick = { showCancelDialog = true },
+                            modifier = Modifier.weight(1f).height(56.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB42318))
+                        ) {
+                            Text("CANCEL", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
     }
@@ -134,9 +139,9 @@ fun PaymentDetailScreen(
 }
 
 @Composable
-private fun DetailRowItem(label: String, value: String) {
+private fun DetailRowItem(label: String, value: String, isProminent: Boolean = false) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = Color(0xFF667085), fontSize = 14.sp)
-        Text(value, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF14233C))
+        Text(label, color = Color(0xFF667085), fontSize = if (isProminent) 16.sp else 14.sp, fontWeight = if (isProminent) FontWeight.Medium else FontWeight.Normal)
+        Text(value, fontWeight = FontWeight.Bold, fontSize = if (isProminent) 18.sp else 14.sp, color = Color(0xFF14233C))
     }
 }

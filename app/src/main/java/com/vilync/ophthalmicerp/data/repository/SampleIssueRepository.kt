@@ -229,12 +229,16 @@ class SampleIssueRepository(
         val issued =
             sampleIssueDao.getIssuedItemCount(sampleIssueId)
 
+        val evaluated =
+            sampleIssueDao.getEvaluatedItemCount(sampleIssueId)
+
         val newStatus =
             when {
                 total <= 0 -> "ISSUED"
-                issued == total -> "ISSUED"
-                issued <= 0 -> "CLOSED"
-                else -> "PARTIALLY_RETURNED"
+                (issued + evaluated) <= 0 -> "CLOSED"
+                issued > 0 -> if (issued < total) "PARTIALLY_RETURNED" else "ISSUED"
+                evaluated > 0 -> "EVALUATED"
+                else -> "CLOSED"
             }
 
         sampleIssueDao.updateSampleIssueStatus(
@@ -254,5 +258,90 @@ class SampleIssueRepository(
             financialYearStart =
                 financialYearStart
         )
+    }
+
+    suspend fun findEvaluatedSampleItemsForCustomer(
+        customerId: Long,
+        query: String
+    ): List<SampleIssueItemEntity> {
+        return sampleIssueDao.findEvaluatedSampleItemsForCustomer(customerId, query)
+    }
+
+    // =========================================================
+    // RETURN SAMPLE TO STOCK (ATOMIC)
+    // =========================================================
+
+    suspend fun returnCompleteSampleToStock(sampleId: Long) {
+        database.withTransaction {
+            val sample = sampleIssueDao.getSampleIssueById(sampleId)
+                ?: error("Sample Note not found.")
+
+            require(sample.status == "ISSUED") {
+                "Only an ISSUED sample can be returned to stock."
+            }
+
+            val items = sampleIssueDao.getItemsBySampleIssueId(sampleId)
+            val inventoryDao = database.inventoryDao()
+            val movementDao = database.stockMovementDao()
+            val now = System.currentTimeMillis()
+
+            // 1. Update Sample Header
+            sampleIssueDao.updateSampleIssueStatus(sampleId, "RETURNED", now)
+
+            // 2. Update Items and physical stock
+            items.forEach { item ->
+                if (item.settlementStatus == "ISSUED") {
+                    sampleIssueDao.markItemReturned(item.id, now)
+                    
+                    // Physical Return
+                    inventoryDao.updateStatus(item.inventoryUnitId, "IN_STOCK")
+
+                    movementDao.insertMovement(
+                        StockMovementEntity(
+                            inventoryUnitId = item.inventoryUnitId,
+                            serialNumber = item.serialNumber.trim(),
+                            movementType = "RETURNED",
+                            fromStatus = "SAMPLE",
+                            toStatus = "IN_STOCK",
+                            partyName = sample.customerName.trim(),
+                            referenceNumber = sample.sampleIssueNumber.trim(),
+                            movementDate = sample.sampleIssueDate.trim(),
+                            remarks = "Returned to stock from Sample Note ${sample.sampleIssueNumber.trim()}"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    // =========================================================
+    // MARK SAMPLE AS EVALUATED (ATOMIC BUSINESS STATUS CHANGE)
+    // =========================================================
+
+    suspend fun markCompleteSampleEvaluated(sampleId: Long) {
+        database.withTransaction {
+            val sample = sampleIssueDao.getSampleIssueById(sampleId)
+                ?: error("Sample Note not found.")
+
+            require(sample.status == "ISSUED") {
+                "Only an ISSUED sample can be marked as evaluated."
+            }
+
+            val items = sampleIssueDao.getItemsBySampleIssueId(sampleId)
+            val now = System.currentTimeMillis()
+
+            // 1. Update Sample Header
+            sampleIssueDao.updateSampleIssueStatus(sampleId, "EVALUATED", now)
+
+            // 2. Update Items settlementStatus to EVALUATED
+            items.forEach { item ->
+                if (item.settlementStatus == "ISSUED") {
+                    sampleIssueDao.updateSampleIssueItemSettlementStatus(item.id, "EVALUATED", now)
+                }
+            }
+            
+            // NOTE: No stock movement is created as per Rule 3.
+            // Physical serial remains in status 'SAMPLE' (OUT).
+        }
     }
 }

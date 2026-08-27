@@ -2,7 +2,7 @@ package com.vilync.ophthalmicerp.feature.login
 
 import android.content.Context
 import android.util.Log
-import com.vilync.ophthalmicerp.data.database.DatabaseProvider
+import com.vilync.ophthalmicerp.feature.login.model.StartupFacts
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -23,7 +23,7 @@ object StartupLogger {
     fun logStartup(
         context: Context,
         appVersion: String,
-        report: DatabaseProvider.DatabaseHealthReport,
+        report: StartupFacts,
         destination: String,
         error: String? = null
     ) {
@@ -46,15 +46,12 @@ object StartupLogger {
                 put("dbVersion", report.versionOnDisk)
                 put("expectedVersion", report.expectedVersion)
                 put("canOpen", report.canOpen)
-                put("healthScore", report.healthScore.name)
-                put("usersCount", report.usersCount)
-                put("companyProfileCount", report.companyProfileCount)
-                put("productsCount", report.productsCount)
-                put("partiesCount", report.partiesCount)
-                put("salesCount", report.salesCount)
-                put("purchasesCount", report.purchasesCount)
+                put("infraHealthy", report.infrastructureHealthy)
+                put("adminExists", report.administratorExists)
+                put("businessDataExists", report.businessDataExists)
                 put("destination", destination)
-                put("error", error ?: JSONObject.NULL)
+                put("failureCode", report.failure?.code ?: JSONObject.NULL)
+                put("error", error ?: report.failure?.message ?: JSONObject.NULL)
             }
 
             // Circular retention: Keep last 100

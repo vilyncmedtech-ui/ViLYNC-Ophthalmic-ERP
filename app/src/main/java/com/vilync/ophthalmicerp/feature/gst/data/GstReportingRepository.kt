@@ -1,5 +1,6 @@
 package com.vilync.ophthalmicerp.feature.gst.data
 
+import com.vilync.ophthalmicerp.data.repository.ProductRepository
 import com.vilync.ophthalmicerp.data.repository.PurchaseRepository
 import com.vilync.ophthalmicerp.data.repository.SalesCreditNoteRepository
 import com.vilync.ophthalmicerp.data.repository.SalesRepository
@@ -12,24 +13,30 @@ import kotlin.math.round
 class GstReportingRepository(
     private val salesRepository: SalesRepository,
     private val purchaseRepository: PurchaseRepository,
-    private val salesCreditNoteRepository: SalesCreditNoteRepository
+    private val salesCreditNoteRepository: SalesCreditNoteRepository,
+    private val productRepository: ProductRepository
 ) {
-    suspend fun load(financialYearStart: Int): GstReportSnapshot {
+    suspend fun load(
+        financialYearStart: Int,
+        startDate: String? = null,
+        endDate: String? = null
+    ): GstReportSnapshot {
         require(financialYearStart > 0) { "Valid Financial Year is required." }
 
-        val sales = salesRepository
-            .getSalesByFinancialYear(financialYearStart)
-            .first()
-            .filter { it.status.trim().equals("POSTED", ignoreCase = true) }
+        var salesFlow = salesRepository.getSalesByFinancialYear(financialYearStart).first()
+        var purchasesFlow = purchaseRepository.getPurchasesByFinancialYear(financialYearStart).first()
+        var creditNotesFlow = salesCreditNoteRepository.getCreditNotesByFinancialYear(financialYearStart).first()
 
-        val purchases = purchaseRepository
-            .getPurchasesByFinancialYear(financialYearStart)
-            .first()
+        // Apply Date Filtering if provided
+        if (startDate != null && endDate != null) {
+            salesFlow = salesFlow.filter { isDateInRange(it.invoiceDate, startDate, endDate) }
+            purchasesFlow = purchasesFlow.filter { isDateInRange(it.invoiceDate, startDate, endDate) }
+            creditNotesFlow = creditNotesFlow.filter { isDateInRange(it.creditNoteDate, startDate, endDate) }
+        }
 
-        val creditNotes = salesCreditNoteRepository
-            .getCreditNotesByFinancialYear(financialYearStart)
-            .first()
-            .filter { it.status.trim().equals("POSTED", ignoreCase = true) }
+        val sales = salesFlow.filter { it.status.trim().equals("POSTED", ignoreCase = true) }
+        val purchases = purchasesFlow
+        val creditNotes = creditNotesFlow.filter { it.status.trim().equals("POSTED", ignoreCase = true) }
 
         val saleRows = sales.map {
             GstDocumentRow(
@@ -80,12 +87,27 @@ class GstReportingRepository(
 
         val hsnAccumulator = linkedMapOf<String, MutableHsn>()
 
+        // Helper to resolve HSN with Master fallback
+        val productHsnCache = mutableMapOf<Long, String>()
+        suspend fun resolveHsn(productId: Long, itemHsn: String): String {
+            val trimmed = itemHsn.trim()
+            if (trimmed.isNotBlank()) return trimmed
+            
+            return productHsnCache.getOrPut(productId) {
+                productRepository.getProductById(productId)?.hsnCode?.trim() ?: ""
+            }.ifBlank { "UNSPECIFIED" }
+        }
+
         sales.forEach { sale ->
             salesRepository.getSaleItems(sale.id).first().forEach { item ->
-                val key = item.hsnCode.trim().ifBlank { "UNSPECIFIED" }
+                val hsn = resolveHsn(item.productId, item.hsnCode)
+                val rate = item.gstPercent
+                val key = "${hsn}_${rate}"
+                
                 val row = hsnAccumulator.getOrPut(key) {
                     MutableHsn(
-                        hsnCode = key,
+                        hsnCode = hsn,
+                        gstPercent = rate,
                         description = item.productName.trim()
                     )
                 }
@@ -95,18 +117,23 @@ class GstReportingRepository(
             }
         }
 
-        purchases.forEach { purchase ->
-            purchaseRepository.getPurchaseItems(purchase.id).first().forEach { item ->
-                val key = item.hsnCode.trim().ifBlank { "UNSPECIFIED" }
+        // Deduct Credit Notes (Sales Returns) from HSN Summary
+        creditNotes.forEach { cn ->
+            salesCreditNoteRepository.getItemsByCreditNoteId(cn.id).forEach { item ->
+                val hsn = resolveHsn(item.productId, "") 
+                val rate = item.gstPercent
+                val key = "${hsn}_${rate}"
+                
                 val row = hsnAccumulator.getOrPut(key) {
                     MutableHsn(
-                        hsnCode = key,
-                        description = "Purchase HSN"
+                        hsnCode = hsn,
+                        gstPercent = rate,
+                        description = item.productName.trim()
                     )
                 }
-                row.quantity += item.quantity
-                row.taxableAmount += item.taxableAmount
-                row.gstAmount += item.gstAmount
+                row.quantity -= item.quantity
+                row.taxableAmount -= item.taxableAmount
+                row.gstAmount -= item.gstAmount
             }
         }
 
@@ -121,14 +148,29 @@ class GstReportingRepository(
                     description = it.description,
                     quantity = it.quantity,
                     taxableAmount = money(it.taxableAmount),
-                    gstAmount = money(it.gstAmount)
+                    gstPercent = it.gstPercent,
+                    gstAmount = money(it.gstAmount),
+                    totalAmount = money(it.taxableAmount + it.gstAmount)
                 )
-            }.sortedBy { it.hsnCode }
+            }.sortedWith(compareBy({ it.hsnCode }, { it.gstPercent }))
         )
+    }
+
+    private fun isDateInRange(dateStr: String, start: String, end: String): Boolean {
+        // dateStr is dd-MM-yyyy, start/end are yyyy-MM-dd
+        try {
+            val parts = dateStr.split("-")
+            if (parts.size != 3) return false
+            val normalized = "${parts[2]}-${parts[1]}-${parts[0]}"
+            return normalized >= start && normalized <= end
+        } catch (e: Exception) {
+            return false
+        }
     }
 
     private data class MutableHsn(
         val hsnCode: String,
+        val gstPercent: Double,
         val description: String,
         var quantity: Int = 0,
         var taxableAmount: Double = 0.0,

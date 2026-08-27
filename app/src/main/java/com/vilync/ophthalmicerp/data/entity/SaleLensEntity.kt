@@ -71,5 +71,24 @@ data class SaleLensEntity(
 
     val batchNumber: String = "",
 
-    val expiryDate: String = ""
+    val expiryDate: String = "",
+
+    // =========================================================
+    // SETTLEMENT LINK (e.g. from Challan)
+    // =========================================================
+
+    /*
+     * If this lens was sourced from a Pending Challan,
+     * this field stores the source Challan Item ID.
+     *
+     * Used for atomic settlement (ON_CHALLAN -> SOLD)
+     * and traceability.
+     */
+    val sourceChallanItemId: Long? = null,
+
+    /*
+     * If this lens was sourced from an EVALUATED Sample Issue,
+     * this field stores the source Sample Issue Item ID.
+     */
+    val sourceSampleIssueItemId: Long? = null
 )

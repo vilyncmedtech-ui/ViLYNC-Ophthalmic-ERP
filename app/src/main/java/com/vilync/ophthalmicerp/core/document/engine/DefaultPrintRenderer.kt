@@ -9,6 +9,7 @@ import android.print.PageRange
 import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
+import com.vilync.ophthalmicerp.core.document.domain.geometry.MeasurementUnit
 import java.io.FileOutputStream
 
 /**
@@ -20,19 +21,18 @@ class DefaultPrintRenderer(
 ) : PrintRenderer {
 
     override suspend fun render(request: DocumentRequest, context: RenderContext): RenderResult {
-        // Generic base method. In production usage, a RenderSession would be provided.
         return PrintRenderResult(
             isSuccess = false,
             errorCode = "ERR_NOT_IMPLEMENTED",
-            message = "Use renderSession to generate a PrintDocumentAdapter."
+            message = "Use createPrintAdapter to generate a PrintDocumentAdapter."
         )
     }
 
     /**
-     * Creates an adapter for the system printing flow.
+     * Creates an adapter for the system printing flow using the provided rendering context.
      */
-    fun createPrintAdapter(session: RenderSession, documentTitle: String): PrintRenderResult {
-        val adapter = DesignerPrintAdapter(session, documentTitle)
+    fun createPrintAdapter(session: RenderSession, context: RenderContext, documentTitle: String): PrintRenderResult {
+        val adapter = DesignerPrintAdapter(session, context, documentTitle)
         return PrintRenderResult(
             isSuccess = true,
             printAdapter = adapter,
@@ -42,6 +42,7 @@ class DefaultPrintRenderer(
 
     private inner class DesignerPrintAdapter(
         private val session: RenderSession,
+        private val context: RenderContext,
         private val title: String
     ) : PrintDocumentAdapter() {
 
@@ -84,11 +85,18 @@ class DefaultPrintRenderer(
                 val groupedInstructions = session.instructions.groupBy { it.pageIndex }
                 val sortedPageIndices = groupedInstructions.keys.sorted()
 
+                // Resolve physical size in points (72 DPI)
+                val pointsSize = context.pageSize.convertTo(MeasurementUnit.POINT)
+
                 sortedPageIndices.forEach { pageIndex ->
                     val pageInstructions = groupedInstructions[pageIndex] ?: return@forEach
                     
-                    // Standard A4 Points (595x842)
-                    val pageInfo = PdfDocument.PageInfo.Builder(595, 842, pageIndex + 1).create()
+                    val pageInfo = PdfDocument.PageInfo.Builder(
+                        pointsSize.width.toInt(),
+                        pointsSize.height.toInt(),
+                        pageIndex + 1
+                    ).create()
+                    
                     val page = document.startPage(pageInfo)
                     val canvas = page.canvas
 

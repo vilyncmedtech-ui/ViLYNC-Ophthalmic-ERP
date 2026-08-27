@@ -9,7 +9,10 @@ enum class DocumentType(val defaultPrefix: String) {
     CREDIT_NOTE("VMCN"),
     DEBIT_NOTE("VMDN"),
     PROFORMA("VMPI"),
-    SAMPLE_ISSUE("VMSN")
+    SAMPLE_ISSUE("VMSN"),
+    PURCHASE_ORDER("VMPO"),
+    OPENING_STOCK("VMOS"),
+    RECEIPT("RCPT")
 }
 
 /**
@@ -46,10 +49,33 @@ class DocumentNumberingRepository(
             ?: throw IllegalStateException("Failed to retrieve series after generation.")
             
         return formatDocumentNumber(
+            type = type,
             prefix = series.prefix,
             financialYearStart = financialYearStart,
             sequence = sequence,
             padding = series.padding
+        )
+    }
+
+    /**
+     * Peeks at the next available document number without incrementing the sequence.
+     * 
+     * Useful for UI previews.
+     */
+    suspend fun peekNextDocumentNumber(type: DocumentType, financialYearStart: Int): String {
+        val dao = database.documentNumberingDao()
+        val series = dao.getSeries(type.name, financialYearStart)
+        
+        val nextSequence = (series?.lastSequenceNumber ?: 0) + 1
+        val prefix = series?.prefix ?: type.defaultPrefix
+        val padding = series?.padding ?: 4
+        
+        return formatDocumentNumber(
+            type = type,
+            prefix = prefix,
+            financialYearStart = financialYearStart,
+            sequence = nextSequence,
+            padding = padding
         )
     }
 
@@ -59,21 +85,30 @@ class DocumentNumberingRepository(
      * Architecture allows for future override of this logic via Company Settings.
      */
     private fun formatDocumentNumber(
+        type: DocumentType,
         prefix: String,
         financialYearStart: Int,
         sequence: Int,
         padding: Int
     ): String {
-        val fyCode = formatFyCode(financialYearStart)
+        val fyCode = formatFyCode(financialYearStart, type == DocumentType.RECEIPT)
         val paddedSequence = sequence.toString().padStart(padding, '0')
         
-        return "$prefix/$fyCode/$paddedSequence"
+        return if (type == DocumentType.RECEIPT) {
+            "$prefix/$fyCode//$paddedSequence"
+        } else {
+            "$prefix/$fyCode/$paddedSequence"
+        }
     }
 
-    private fun formatFyCode(startYear: Int): String {
+    private fun formatFyCode(startYear: Int, useSeparator: Boolean = false): String {
         val startYearShort = startYear % 100
         val endYearShort = (startYear + 1) % 100
-        return "%02d%02d".format(startYearShort, endYearShort)
+        return if (useSeparator) {
+            "%02d-%02d".format(startYearShort, endYearShort)
+        } else {
+            "%02d%02d".format(startYearShort, endYearShort)
+        }
     }
 
     /**

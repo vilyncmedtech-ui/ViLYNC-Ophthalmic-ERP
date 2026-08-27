@@ -197,6 +197,10 @@ dependencies {
         libs.google.identity.googleid
     )
 
+    implementation(
+        libs.googleauth
+    )
+
 
     // =========================================================
     // GOOGLE DRIVE API
@@ -222,6 +226,12 @@ dependencies {
     implementation(
         libs.androidx.work.runtime
     )
+
+    // =========================================================
+    // BARCODE / QR GENERATION
+    // =========================================================
+
+    implementation("com.google.zxing:core:3.5.3")
 
 
     // =========================================================

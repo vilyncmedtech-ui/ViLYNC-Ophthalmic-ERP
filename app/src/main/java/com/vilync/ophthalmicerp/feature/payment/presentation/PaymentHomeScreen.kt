@@ -19,7 +19,8 @@ fun PaymentHomeScreen(
     onReceiptClick: () -> Unit,
     onPaymentClick: () -> Unit,
     onReceiptRegisterClick: () -> Unit,
-    onPaymentRegisterClick: () -> Unit
+    onPaymentRegisterClick: () -> Unit,
+    onReceivablesEnquiryClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -64,6 +65,18 @@ fun PaymentHomeScreen(
                 onClick = onReceiptRegisterClick,
                 modifier = Modifier.weight(1f)
             )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            PaymentMenuCard(
+                title = "Receivables Enquiry",
+                subtitle = "Party-wise outstanding status",
+                icon = "📋",
+                color = Color(0xFFF9F5FF),
+                onClick = onReceivablesEnquiryClick,
+                modifier = Modifier.fillMaxWidth(0.5f)
+            )
+            Spacer(modifier = Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(8.dp))

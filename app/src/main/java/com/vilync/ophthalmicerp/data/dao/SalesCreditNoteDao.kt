@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.vilync.ophthalmicerp.data.entity.SalesCreditNoteEntity
 import com.vilync.ophthalmicerp.data.entity.SalesCreditNoteItemEntity
@@ -40,6 +41,44 @@ interface SalesCreditNoteDao {
     suspend fun updateCreditNote(
         creditNote: SalesCreditNoteEntity
     )
+
+    // =========================================================
+    // EDIT / REPLACE DOCUMENT HIERARCHY
+    // =========================================================
+
+    @Query("DELETE FROM sales_credit_note_items WHERE creditNoteId = :creditNoteId")
+    suspend fun deleteCreditNoteItems(creditNoteId: Long)
+
+    @Transaction
+    suspend fun replaceCompleteCreditNoteDocument(
+        creditNote: SalesCreditNoteEntity,
+        itemsWithLenses: List<Pair<SalesCreditNoteItemEntity, List<SalesCreditNoteLensEntity>>>
+    ) {
+        updateCreditNote(creditNote)
+        deleteCreditNoteItems(creditNote.id)
+
+        itemsWithLenses.forEach { (item, lenses) ->
+            val itemId = insertCreditNoteItems(
+                listOf(
+                    item.copy(
+                        id = 0L,
+                        creditNoteId = creditNote.id
+                    )
+                )
+            ).single()
+
+            if (lenses.isNotEmpty()) {
+                insertCreditNoteLenses(
+                    lenses.map { lens ->
+                        lens.copy(
+                            id = 0L,
+                            creditNoteItemId = itemId
+                        )
+                    }
+                )
+            }
+        }
+    }
 
     // =========================================================
     // DOCUMENT / REGISTER
@@ -103,6 +142,9 @@ interface SalesCreditNoteDao {
 
     @Query("SELECT SUM(totalAmount) FROM sales_credit_notes WHERE customerId = :customerId AND status = 'POSTED'")
     suspend fun getTotalCreditNoteAmountForCustomer(customerId: Long): Double?
+
+    @Query("SELECT customerId as partyId, SUM(totalAmount) as total FROM sales_credit_notes WHERE status = 'POSTED' GROUP BY customerId")
+    suspend fun getAllPartiesTotalCreditNotes(): List<PartyTotal>
 
     // =========================================================
     // PERIOD REPORTING QUERIES

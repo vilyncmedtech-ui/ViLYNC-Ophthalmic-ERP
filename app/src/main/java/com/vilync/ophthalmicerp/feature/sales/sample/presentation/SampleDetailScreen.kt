@@ -1,7 +1,5 @@
 package com.vilync.ophthalmicerp.feature.sales.sample.presentation
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,8 +7,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vilync.ophthalmicerp.feature.sales.sample.export.SampleIssueExportSuite
@@ -26,12 +26,51 @@ fun SampleDetailScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
 
-    val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
-        uri?.let {
-            uiState.sample?.let { sample ->
-                SampleIssueExportSuite.exportPdf(context, it, sample, uiState.items)
+    var showReturnConfirmation by remember { mutableStateOf(false) }
+    var showEvaluationConfirmation by remember { mutableStateOf(false) }
+
+    if (showReturnConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showReturnConfirmation = false },
+            title = { Text("Return to Stock") },
+            text = { Text("Are you sure you want to return all issued serials from this Sample Note back to active inventory?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showReturnConfirmation = false
+                        viewModel.returnToStock()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("Confirm Return")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReturnConfirmation = false }) { Text("Cancel") }
             }
-        }
+        )
+    }
+
+    if (showEvaluationConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showEvaluationConfirmation = false },
+            title = { Text("Mark as Evaluated") },
+            text = { Text("This will mark the evaluation as successful. Note: Physical serials will remain OUT of stock with the Hospital/Doctor.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showEvaluationConfirmation = false
+                        viewModel.markAsEvaluated()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) {
+                    Text("Confirm Evaluation")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEvaluationConfirmation = false }) { Text("Cancel") }
+            }
+        )
     }
 
     Scaffold(
@@ -41,8 +80,12 @@ fun SampleDetailScreen(
                 onBack = onBack,
                 onDashboard = onDashboard,
                 onPrint = { uiState.sample?.let { SampleIssueExportSuite.print(context, it, uiState.items) } },
-                onPdf = { uiState.sample?.let { pdfLauncher.launch("Sample_${it.sampleIssueNumber.replace("/", "_")}.pdf") } },
-                onShare = { uiState.sample?.let { SampleIssueExportSuite.sharePdf(context, it, uiState.items) } },
+                onPdf = { uiState.sample?.let { SampleIssueExportSuite.exportPdfAndShare(context, it, uiState.items) } },
+                onExcel = {
+                    uiState.sample?.let { sample ->
+                        SampleIssueExportSuite.exportExcelAndShare(context, sample, uiState.items)
+                    }
+                },
                 onEdit = { uiState.sample?.let { onEdit(it.id) } },
                 isEditable = uiState.sample?.status == "ISSUED"
             )
@@ -95,6 +138,40 @@ fun SampleDetailScreen(
                                 Text("Remarks", fontWeight = FontWeight.Bold)
                                 Text(sample.remarks)
                             }
+                        }
+                    }
+                }
+
+                if (sample.status == "ISSUED" && !uiState.isActionRunning) {
+                    item {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Button(
+                                onClick = { showEvaluationConfirmation = true },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                            ) {
+                                Text("MARK AS EVALUATED", fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                            }
+
+                            Button(
+                                onClick = { showReturnConfirmation = true },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("RETURN TO STOCK", fontSize = 12.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                            }
+                        }
+                    }
+                }
+
+                if (uiState.isActionRunning) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
                         }
                     }
                 }

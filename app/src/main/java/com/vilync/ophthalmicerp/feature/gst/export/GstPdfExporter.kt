@@ -475,12 +475,12 @@ object GstPdfExporter {
             sectionTitle("HSN SUMMARY")
 
             if (rows.isEmpty()) {
-                drawNote("No HSN transaction data found for this Financial Year.")
+                drawNote("No HSN transaction data found for this period.")
                 return
             }
 
-            val widths = listOf(105f, 270f, 70f, 150f, 145f)
-            val headers = listOf("HSN", "Description", "Qty", "Taxable", "GST")
+            val widths = listOf(90f, 190f, 50f, 110f, 60f, 110f, 130f)
+            val headers = listOf("HSN", "Description", "Qty", "Taxable", "GST%", "GST", "Total")
 
             fillPaint.color = Color.rgb(255, 248, 223)
             canvas().drawRect(
@@ -506,7 +506,9 @@ object GstPdfExporter {
                     row.description,
                     row.quantity.toString(),
                     money(row.taxableAmount),
-                    money(row.gstAmount)
+                    "${row.gstPercent}%",
+                    money(row.gstAmount),
+                    money(row.totalAmount)
                 )
                 x = LEFT_MARGIN
                 values.forEachIndexed { index, value ->

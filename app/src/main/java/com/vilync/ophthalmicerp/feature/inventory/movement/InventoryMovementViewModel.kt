@@ -20,10 +20,8 @@ class InventoryMovementViewModel(
         val serial = filters["serial"]?.toString()?.takeIf { it.isNotBlank() }
         val powerFilter = filters["power"]?.toString()?.takeIf { it != "All" }
         
-        val selectedProductName = filters["product"]?.toString() ?: "All Products"
-        val prodId = if (selectedProductName == "All Products") null else {
-            products.find { it.productName.replace(Regex("^\\d+\\s+"), "").trim() == selectedProductName }?.id
-        }
+        val productFilterId = filters["product"]?.toString() ?: "0"
+        val prodId = if (productFilterId == "0") null else productFilterId.toLongOrNull()
 
         val custIdStr = filters["customer"]?.toString() ?: "0"
         val vendorIdStr = filters["vendor"]?.toString() ?: "0"

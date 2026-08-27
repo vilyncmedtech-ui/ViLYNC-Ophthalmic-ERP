@@ -5,8 +5,11 @@ import com.vilync.ophthalmicerp.data.dao.PurchaseDao
 import com.vilync.ophthalmicerp.data.dao.PurchaseReturnDao
 import com.vilync.ophthalmicerp.data.dao.SalesCreditNoteDao
 import com.vilync.ophthalmicerp.data.dao.SalesDao
+import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
 import com.vilync.ophthalmicerp.feature.payment.domain.FinancialStatement
 import com.vilync.ophthalmicerp.feature.payment.domain.LedgerRow
+import com.vilync.ophthalmicerp.feature.payment.domain.PartyReceivableSummary
+import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -15,10 +18,39 @@ class FinancialReportingUseCase(
     private val purchaseDao: PurchaseDao,
     private val salesCreditNoteDao: SalesCreditNoteDao,
     private val purchaseReturnDao: PurchaseReturnDao,
-    private val financialTransactionDao: FinancialTransactionDao
+    private val financialTransactionDao: FinancialTransactionDao,
+    private val partyRepository: PartyRepository
 ) {
     private val sdf = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault())
     private val dbSdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+
+    suspend fun getReceivablesSummary(): List<PartyReceivableSummary> {
+        val allSales = salesDao.getAllPartiesTotalSales().associate { it.partyId to it.total }
+        val allReceipts = financialTransactionDao.getAllPartiesTotalByType("CUSTOMER_RECEIPT").associate { it.partyId to it.total }
+        val allCreditNotes = salesCreditNoteDao.getAllPartiesTotalCreditNotes().associate { it.partyId to it.total }
+        
+        val allParties = partyRepository.getAllActiveParties().first()
+            .filter { it.partyType == com.vilync.ophthalmicerp.feature.master.party.model.PartyType.CUSTOMER || 
+                      it.partyType == com.vilync.ophthalmicerp.feature.master.party.model.PartyType.BOTH }
+            
+        return allParties.map { party ->
+            val due = allSales[party.id] ?: 0.0
+            val received = allReceipts[party.id] ?: 0.0
+            val adjustments = allCreditNotes[party.id] ?: 0.0
+            val outstanding = due - received - adjustments
+            
+            PartyReceivableSummary(
+                partyId = party.id,
+                partyName = party.partyName,
+                totalDue = due,
+                totalReceived = received,
+                totalAdjustments = adjustments,
+                balanceOutstanding = outstanding
+            )
+        }.filter { 
+            it.totalDue != 0.0 || it.totalReceived != 0.0 || it.totalAdjustments != 0.0 || it.balanceOutstanding != 0.0 
+        }.sortedByDescending { it.balanceOutstanding }
+    }
 
     suspend fun getCustomerLedger(customerId: Long, startDate: String, endDate: String): FinancialStatement {
         // 1. Opening Balance

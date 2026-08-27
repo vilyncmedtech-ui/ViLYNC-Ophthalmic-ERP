@@ -36,6 +36,8 @@ data class SalesTransactionDetail(
     val igst: Double,
     val amount: Double,
     val status: String,
+    val customerId: Long = 0,
+    val productId: Long = 0,
     val purchasePrice: Double = 0.0,
     val costResolutionSource: String = "UNKNOWN"
 )

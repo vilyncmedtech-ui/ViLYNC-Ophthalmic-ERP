@@ -19,6 +19,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.vilync.ophthalmicerp.ui.components.PartySearchField
 import java.util.Calendar
 import java.util.Locale
@@ -60,6 +63,13 @@ fun NewChallanScreen(
 
     val context =
         LocalContext.current
+
+    if (state.isLoading) {
+        Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            CircularProgressIndicator(color = ChallanNavy)
+        }
+        return
+    }
 
     androidx.compose.runtime.LaunchedEffect(state.savedChallanId) {
         if (state.savedChallanId != null) {
@@ -111,7 +121,7 @@ fun NewChallanScreen(
         ) {
             Column {
                 Text(
-                    text = "New Challan",
+                    text = if (state.isEditMode) "Edit Challan" else "New Challan",
                     style =
                         MaterialTheme
                             .typography
@@ -122,7 +132,8 @@ fun NewChallanScreen(
 
                 Text(
                     text =
-                        "Physical stock issue without invoice",
+                        if (state.isEditMode) "Update existing physical stock issue"
+                        else "Physical stock issue without invoice",
                     color = Color.DarkGray
                 )
             }
@@ -153,11 +164,34 @@ fun NewChallanScreen(
                     Arrangement.spacedBy(12.dp)
             ) {
 
-                Text(
-                    text = "Challan Details",
-                    fontWeight = FontWeight.Bold,
-                    color = ChallanNavy
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Challan Details",
+                        fontWeight = FontWeight.Bold,
+                        color = ChallanNavy
+                    )
+
+                    Row(
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        modifier = Modifier.clickable { viewModel.updateAsLibrary(!state.asLibrary) }
+                    ) {
+                        Checkbox(
+                            checked = state.asLibrary,
+                            onCheckedChange = { viewModel.updateAsLibrary(it) }
+                        )
+
+                        Text(
+                            text = "AS LIBRARY",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFFC62828)
+                        )
+                    }
+                }
 
                 PartySearchField(
                     label = "Customer / Hospital *",
@@ -175,7 +209,7 @@ fun NewChallanScreen(
                 ) {
 
                     OutlinedTextField(
-                        value = "Auto-generated",
+                        value = if (state.challanNumber.isNotBlank()) "Auto-generated | ${state.challanNumber}" else "Auto-generated",
                         onValueChange = {},
                         readOnly = true,
                         label = {
@@ -474,10 +508,10 @@ fun NewChallanScreen(
 
             Text(
                 text =
-                    if (state.isSaving) {
-                        "SAVING CHALLAN..."
-                    } else {
-                        "SAVE CHALLAN"
+                    when {
+                        state.isSaving -> "SAVING..."
+                        state.isEditMode -> "UPDATE CHALLAN"
+                        else -> "SAVE CHALLAN"
                     },
                 fontWeight =
                     FontWeight.Bold

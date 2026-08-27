@@ -1,7 +1,5 @@
 package com.vilync.ophthalmicerp.feature.purchase.register
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -21,7 +20,6 @@ import androidx.compose.ui.unit.sp
 import com.vilync.ophthalmicerp.core.export.ExportReport
 import com.vilync.ophthalmicerp.core.export.ReportExportUtils
 import com.vilync.ophthalmicerp.data.entity.PurchaseEntity
-import com.vilync.ophthalmicerp.ui.components.PrintExportActionBar
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -45,7 +43,8 @@ fun PurchaseRegisterScreen(
     onDashboard: () -> Unit,
     onNewPurchase: () -> Unit,
     onPurchaseClick: (Long) -> Unit = {},
-    onEditPurchase: (Long) -> Unit = {}
+    onEditPurchase: (Long) -> Unit = {},
+    title: String = "Purchase Register"
 ) {
 
     val uiState by
@@ -74,6 +73,7 @@ fun PurchaseRegisterScreen(
         mutableStateOf<PurchaseEntity?>(null)
     }
 
+    var exportExpanded by remember { mutableStateOf(false) }
 
     // =========================================================
     // EXPORT REPORT
@@ -85,7 +85,7 @@ fun PurchaseRegisterScreen(
             ExportReport(
 
                 title =
-                    "Purchase Register",
+                    title,
 
                 headers =
                     listOf(
@@ -113,42 +113,6 @@ fun PurchaseRegisterScreen(
         }
 
 
-    val pdfLauncher =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument(
-                "application/pdf"
-            )
-        ) { uri ->
-
-            uri?.let {
-
-                ReportExportUtils.exportPdf(
-                    context,
-                    it,
-                    registerReport
-                )
-            }
-        }
-
-
-    val excelLauncher =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument(
-                "text/csv"
-            )
-        ) { uri ->
-
-            uri?.let {
-
-                ReportExportUtils.exportExcelCsv(
-                    context,
-                    it,
-                    registerReport
-                )
-            }
-        }
-
-
     val financialYearLabel =
         formatFinancialYear(
             uiState.financialYearStart
@@ -168,148 +132,101 @@ fun PurchaseRegisterScreen(
     ) {
 
         // =====================================================
-        // HEADER
+        // TOP ACTION ROW
         // =====================================================
 
         Row(
-            modifier =
-                Modifier.fillMaxWidth(),
-
-            horizontalArrangement =
-                Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-
-            Column(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = 56.dp)
-            ) {
-
-                Text(
-                    text =
-                        "Purchase Register",
-
-                    fontSize =
-                        22.sp,
-
-                    fontWeight =
-                        FontWeight.Bold
-                )
-
-
-                Spacer(
-                    Modifier.height(3.dp)
-                )
-
-
-                Text(
-                    text =
-                        "Tap to view • Long press for Edit / Delete",
-
-                    fontSize =
-                        12.sp,
-
-                    color =
-                        RegisterMuted
-                )
-
-
-                Spacer(
-                    Modifier.height(4.dp)
-                )
-
-
-                Surface(
-                    shape =
-                        RoundedCornerShape(8.dp),
-
-                    color =
-                        RegisterAccentBlue.copy(
-                            alpha = 0.10f
-                        )
-                ) {
-
-                    Text(
-                        text =
-                            "Working FY: $financialYearLabel",
-
-                        modifier =
-                            Modifier.padding(
-                                horizontal = 10.dp,
-                                vertical = 5.dp
-                            ),
-
-                        fontSize =
-                            13.sp,
-
-                        fontWeight =
-                            FontWeight.SemiBold,
-
-                        color =
-                            RegisterAccentBlue
-                    )
-                }
+            OutlinedButton(onClick = onBack) {
+                Text("← Back")
             }
 
-
-            Column(
-                horizontalAlignment =
-                    androidx.compose.ui.Alignment.End
-            ) {
-
-                Row(
-                    horizontalArrangement =
-                        Arrangement.spacedBy(8.dp)
-                ) {
-
-                    OutlinedButton(
-                        onClick = onBack
-                    ) {
-                        Text("← Back")
-                    }
-
-
-                    OutlinedButton(
-                        onClick = onDashboard
-                    ) {
-                        Text("⌂ Dashboard")
-                    }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onDashboard) {
+                    Text("⌂ Dashboard")
                 }
 
+                Box {
+                    Button(onClick = { exportExpanded = true }) {
+                        Text("Export ▼")
+                    }
 
-                Spacer(
-                    Modifier.height(5.dp)
-                )
-
-
-                PrintExportActionBar(
-
-                    onPrint = {
-                        ReportExportUtils.print(
-                            context,
-                            registerReport
+                    DropdownMenu(
+                        expanded = exportExpanded,
+                        onDismissRequest = { exportExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Print") },
+                            onClick = {
+                                exportExpanded = false
+                                ReportExportUtils.print(context, registerReport)
+                            }
                         )
-                    },
-
-                    onExportPdf = {
-                        pdfLauncher.launch(
-                            "Purchase_Register.pdf"
+                        DropdownMenuItem(
+                            text = { Text("PDF") },
+                            onClick = {
+                                exportExpanded = false
+                                ReportExportUtils.exportPdfAndShare(context, registerReport)
+                            }
                         )
-                    },
-
-                    onExportExcel = {
-                        excelLauncher.launch(
-                            "Purchase_Register.csv"
+                        DropdownMenuItem(
+                            text = { Text("Excel") },
+                            onClick = {
+                                exportExpanded = false
+                                ReportExportUtils.exportExcelAndShare(context, registerReport)
+                            }
                         )
                     }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // =====================================================
+        // TITLE AREA
+        // =====================================================
+
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = title,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = RegisterNavy
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            Text(
+                text = "Tap to view • Long press for Edit / Delete",
+                fontSize = 12.sp,
+                color = RegisterMuted
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = RegisterAccentBlue.copy(alpha = 0.10f)
+            ) {
+                Text(
+                    text = "Working FY: $financialYearLabel",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = RegisterAccentBlue
                 )
             }
         }
 
 
         Spacer(
-            Modifier.height(8.dp)
+            Modifier.height(16.dp)
         )
 
 
@@ -350,10 +267,9 @@ fun PurchaseRegisterScreen(
                 onClick =
                     onNewPurchase,
 
-                modifier =
-                    Modifier
-                        .width(180.dp)
-                        .heightIn(min = 56.dp),
+                modifier = Modifier
+                    .wrapContentWidth()
+                    .heightIn(min = 56.dp),
 
                 colors =
                     ButtonDefaults.buttonColors(
@@ -367,7 +283,7 @@ fun PurchaseRegisterScreen(
 
                 Text(
                     text =
-                        "New Purchase",
+                        if (title.contains("Order")) "New PO" else "New Purchase",
 
                     fontSize =
                         17.sp,
@@ -446,7 +362,8 @@ fun PurchaseRegisterScreen(
 
                             selectedPurchase =
                                 purchase
-                        }
+                        },
+                        title = title
                     )
                 }
             }
@@ -751,7 +668,8 @@ fun PurchaseRegisterScreen(
 private fun PurchaseRegisterCard(
     purchase: PurchaseEntity,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    title: String
 ) {
     val money = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
 
@@ -779,10 +697,10 @@ private fun PurchaseRegisterCard(
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically
         ) {
             RegisterCell(
-                label = "INVOICE",
+                label = if (title.contains("Order")) "PO NO." else "INVOICE",
                 value = purchase.invoiceNumber.ifBlank { "-" },
                 modifier = Modifier.weight(1.15f),
                 strong = true

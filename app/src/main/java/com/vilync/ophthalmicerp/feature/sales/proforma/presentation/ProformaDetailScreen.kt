@@ -42,6 +42,11 @@ fun ProformaDetailScreen(
                 onDashboard = onDashboard,
                 onPrint = { uiState.proforma?.let { ProformaInvoiceExportSuite.print(context, it, uiState.items) } },
                 onPdf = { uiState.proforma?.let { pdfLauncher.launch("Proforma_${it.proformaNumber.replace("/", "_")}.pdf") } },
+                onExcel = {
+                    uiState.proforma?.let { proforma ->
+                        ProformaInvoiceExportSuite.exportExcelAndShare(context, proforma, uiState.items)
+                    }
+                },
                 onShare = { uiState.proforma?.let { ProformaInvoiceExportSuite.sharePdf(context, it, uiState.items) } },
                 onEdit = { uiState.proforma?.let { onEdit(it.id) } },
                 isEditable = uiState.proforma?.status == "OPEN"

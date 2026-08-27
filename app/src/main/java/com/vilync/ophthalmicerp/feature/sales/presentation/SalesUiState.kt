@@ -91,6 +91,8 @@ data class SalesUiState(
 
     val invoiceNumber: String = "",
 
+    val nextInvoiceNumberPreview: String = "",
+
     // Selected through Date Picker.
     val invoiceDate: String = "",
 
@@ -493,5 +495,9 @@ data class SalesSelectedInventoryUnit(
 
     val batchNumber: String = "",
 
-    val expiryDate: String = ""
+    val expiryDate: String = "",
+
+    val sourceChallanItemId: Long? = null,
+
+    val sourceSampleIssueItemId: Long? = null
 )

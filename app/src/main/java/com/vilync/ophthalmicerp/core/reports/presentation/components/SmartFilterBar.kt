@@ -217,18 +217,38 @@ private fun SearchBarFilter(
             }
             Text(text = label, fontSize = 12.sp, color = Color(0xFF344054), fontWeight = FontWeight.Medium)
         }
-        OutlinedTextField(
+        
+        BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = Modifier.fillMaxWidth().height(44.dp),
-            placeholder = { Text("Enter ${label.lowercase()}...", fontSize = 13.sp) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp),
             singleLine = true,
-            shape = RoundedCornerShape(10.dp),
-            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = Color(0xFFD0D5DD),
-                focusedBorderColor = Color(0xFF345FA8)
-            )
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 13.sp,
+                color = Color(0xFF101828)
+            ),
+            decorationBox = { innerTextField ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFD0D5DD), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (value.isEmpty()) {
+                            Text(
+                                text = "Enter ${label.lowercase()}...",
+                                fontSize = 13.sp,
+                                color = Color(0xFF667085)
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            }
         )
     }
 }
@@ -237,8 +257,8 @@ private fun SearchBarFilter(
 private fun DropdownFilter(
     label: String,
     icon: ImageVector?,
-    value: String,
-    options: List<String>,
+    value: String, // This is the ID (e.g., "2" or "0" or "All Products")
+    options: List<String>, // Format: "ID|Name|Subtext" or just "Name"
     enableSearch: Boolean = false,
     onValueChange: (String) -> Unit
 ) {
@@ -248,6 +268,17 @@ private fun DropdownFilter(
     // Clear search query when value is reset or changed from outside
     LaunchedEffect(value) {
         menuSearchQuery = ""
+    }
+
+    // Helper to extract Name for display
+    val displayLabel = remember(value, options) {
+        val found = options.find { it.startsWith("$value|") }
+        if (found != null) {
+            found.split("|").getOrNull(1) ?: value
+        } else {
+            // Backward compatibility for simple options or "All Products"
+            value
+        }
     }
 
     val filteredOptions = if (!enableSearch || menuSearchQuery.isBlank()) options
@@ -271,7 +302,7 @@ private fun DropdownFilter(
                 contentPadding = PaddingValues(horizontal = 12.dp)
             ) {
                 Text(
-                    text = value.ifBlank { "Select $label" },
+                    text = displayLabel.ifBlank { "Select $label" },
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
                     fontSize = 13.sp,
@@ -304,10 +335,22 @@ private fun DropdownFilter(
                 }
 
                 filteredOptions.forEach { option ->
+                    val parts = option.split("|")
+                    val id = parts[0]
+                    val name = if (parts.size > 1) parts[1] else parts[0]
+                    val subtext = if (parts.size > 2) parts[2] else ""
+
                     DropdownMenuItem(
-                        text = { Text(option, fontSize = 14.sp) },
+                        text = { 
+                            Column {
+                                Text(name, fontSize = 14.sp)
+                                if (subtext.isNotBlank()) {
+                                    Text(subtext, fontSize = 11.sp, color = Color.Gray)
+                                }
+                            }
+                        },
                         onClick = {
-                            onValueChange(option)
+                            onValueChange(id)
                             expanded = false
                             menuSearchQuery = ""
                         }

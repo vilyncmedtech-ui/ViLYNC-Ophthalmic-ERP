@@ -7,10 +7,12 @@ import com.vilync.ophthalmicerp.feature.inventory.alert.LowStockAlertUseCase
 import com.vilync.ophthalmicerp.feature.payment.logic.OutstandingCalculationUseCase
 import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
 import com.vilync.ophthalmicerp.feature.master.party.model.PartyType
+import com.vilync.ophthalmicerp.feature.inventory.ageing.InventoryAgeingUseCase
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 
 data class DashboardUiState(
     val lowStockCount: Int = 0,
@@ -70,12 +72,12 @@ class DashboardViewModel(
         
         try {
             val thresholdOverdue = 60
-            val thresholdExpiry = 90
             
             // 1. Low Stock
-            val alerts = lowStockUseCase.getAlerts(emptyMap())
-            val lowStockCount = alerts.count { 
-                it.values["status"] != LowStockAlertUseCase.STATUS_HEALTHY 
+            val snapshots = lowStockUseCase.getSnapshots()
+            val lowStockCount = snapshots.count { snapshot ->
+                val status = lowStockUseCase.classify(snapshot)
+                status == LowStockAlertUseCase.STATUS_OUT_OF_STOCK || status == LowStockAlertUseCase.STATUS_LOW_STOCK
             }
 
             // 2. Overdue Outstanding
@@ -103,9 +105,19 @@ class DashboardViewModel(
             }
 
             // 3. Expiry Alert
-            val expiryThresholdDate = LocalDate.now().plusDays(thresholdExpiry.toLong())
-                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-            val expiryCount = database.inventoryDao().getExpiringSoonCount(expiryThresholdDate)
+            val today = LocalDate.now()
+            val inventoryUnits = database.inventoryDao().getAllInventoryUnits().first()
+            val expiryCount = inventoryUnits.count { unit ->
+                if (unit.status != "IN_STOCK" || unit.expiryDate.isBlank()) return@count false
+                
+                val expiryLocalDate = InventoryAgeingUseCase.parseExpiryDate(unit.expiryDate)
+                    ?: return@count false
+                
+                val daysLeft = ChronoUnit.DAYS.between(today, expiryLocalDate)
+                
+                // Authoritative High Risk definition: 1-90 days
+                daysLeft in 1..90
+            }
 
             // 4. Pending Docs
             val pendingChallans = database.challanDao().observeOpenChallanCount().first()

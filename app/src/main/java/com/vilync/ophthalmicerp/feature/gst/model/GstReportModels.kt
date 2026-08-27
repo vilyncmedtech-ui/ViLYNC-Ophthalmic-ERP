@@ -69,7 +69,9 @@ data class GstHsnRow(
     val description: String,
     val quantity: Int,
     val taxableAmount: Double,
-    val gstAmount: Double
+    val gstPercent: Double,
+    val gstAmount: Double,
+    val totalAmount: Double
 )
 
 enum class GstReportType(

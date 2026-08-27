@@ -276,4 +276,172 @@ class ChallanRepository(
             challanId
         }
     }
+
+
+    // =========================================================
+    // ATOMIC CHALLAN UPDATE (EDIT)
+    // =========================================================
+
+    suspend fun updateCompleteChallan(
+        challanId: Long,
+        challan: ChallanEntity,
+        items: List<ChallanItemEntity>
+    ): Long {
+
+        val db =
+            requireNotNull(database) {
+                "AppDatabase is required for atomic Challan update."
+            }
+
+        require(challanId > 0L) {
+            "Valid Challan ID is required for editing."
+        }
+
+        require(items.isNotEmpty()) {
+            "Please add at least one physical item to the Challan."
+        }
+
+        return db.withTransaction {
+
+            val inventoryDao = db.inventoryDao()
+            val movementDao = db.stockMovementDao()
+
+            val existingItems =
+                challanDao.getItemsByChallanId(challanId)
+
+            val existingInventoryIds =
+                existingItems.map { it.inventoryUnitId }.toSet()
+
+            val newInventoryIds =
+                items.map { it.inventoryUnitId }.toSet()
+
+
+            // 1. Items to Remove (were in old list, not in new list)
+            val toRemove =
+                existingItems.filter {
+                    it.inventoryUnitId !in newInventoryIds
+                }
+
+            toRemove.forEach { item ->
+
+                require(item.settlementStatus.uppercase() == "PENDING") {
+                    "Cannot remove serial ${item.serialNumber} as it has already been invoiced."
+                }
+
+                // Return to Stock
+                inventoryDao.updateStatus(
+                    unitId = item.inventoryUnitId,
+                    newStatus = "IN_STOCK"
+                )
+
+                movementDao.insertMovement(
+                    StockMovementEntity(
+                        inventoryUnitId = item.inventoryUnitId,
+                        serialNumber = item.serialNumber.trim(),
+                        movementType = "CHALLAN_REMOVED",
+                        fromStatus = "ON_CHALLAN",
+                        toStatus = "IN_STOCK",
+                        partyName = challan.customerName.trim(),
+                        referenceNumber = challan.challanNumber.trim(),
+                        movementDate = challan.challanDate.trim(),
+                        remarks =
+                            "Removed from Challan ${challan.challanNumber.trim()} during edit."
+                    )
+                )
+            }
+
+
+            // 2. Items to Add (are in new list, were not in old list)
+            val toAdd =
+                items.filter {
+                    it.inventoryUnitId !in existingInventoryIds
+                }
+
+            toAdd.forEach { item ->
+
+                val unit =
+                    inventoryDao.getById(item.inventoryUnitId)
+                        ?: error(
+                            "Inventory unit not found for serial ${item.serialNumber}."
+                        )
+
+                require(
+                    unit.status.trim().uppercase() == "IN_STOCK"
+                ) {
+                    "Serial ${unit.serialNumber} is no longer IN_STOCK."
+                }
+
+                inventoryDao.updateStatus(
+                    unitId = item.inventoryUnitId,
+                    newStatus = "ON_CHALLAN"
+                )
+
+                movementDao.insertMovement(
+                    StockMovementEntity(
+                        inventoryUnitId = item.inventoryUnitId,
+                        serialNumber = item.serialNumber.trim(),
+                        movementType = "CHALLAN_ISSUED",
+                        fromStatus = "IN_STOCK",
+                        toStatus = "ON_CHALLAN",
+                        partyName = challan.customerName.trim(),
+                        referenceNumber = challan.challanNumber.trim(),
+                        movementDate = challan.challanDate.trim(),
+                        remarks =
+                            "Issued through Challan ${challan.challanNumber.trim()} (Edited)."
+                    )
+                )
+            }
+
+
+            // 3. Update Challan Header
+            challanDao.updateChallan(
+                challan.copy(
+                    id = challanId,
+                    normalizedChallanNumber = challan.challanNumber.trim().uppercase()
+                )
+            )
+
+
+            // 4. Update Items (Delete all and re-insert is easier for atomic update,
+            // but we MUST preserve settlementStatus for existing items that stayed)
+
+            // Actually, a safer way to preserve settlementStatus/saleId is:
+            // - Delete only toRemove
+            // - Insert only toAdd (new ones)
+            // - Update existing ones (rate, etc.) if needed
+
+            // For now, let's keep it simple:
+            // Remove old PENDING ones, re-insert them with new values.
+            // Items that are already INVOICED should NOT be touched in terms of deletion.
+
+            val invoicedItemsCountInNewList = items.count { it.settlementStatus == "INVOICED" }
+            val existingInvoicedItems = existingItems.filter { it.settlementStatus == "INVOICED" }
+
+            // Verify that all existing invoiced items are still in the new list
+            val missingInvoiced = existingInvoicedItems.filter { it.inventoryUnitId !in newInventoryIds }
+            require(missingInvoiced.isEmpty()) {
+                "Cannot remove already invoiced serial numbers: ${missingInvoiced.joinToString { it.serialNumber }}."
+            }
+
+            // Delete only the PENDING ones that were replaced or removed
+            // Wait, re-inserting EVERYTHING that is PENDING is easier to sync rate changes etc.
+
+            // Delete ALL pending items for this challan
+            challanDao.deletePendingItemsByChallanId(challanId)
+
+            // Re-insert all items from the new list that are PENDING
+            val pendingItemsToInsert = items.filter { it.settlementStatus == "PENDING" }.map {
+                it.copy(id = 0L, challanId = challanId)
+            }
+
+            if (pendingItemsToInsert.isNotEmpty()) {
+                challanDao.insertChallanItems(pendingItemsToInsert)
+            }
+
+            // Existing INVOICED items remain untouched in the database because they were not deleted.
+            // If there are rate changes for INVOICED items, they are typically not allowed.
+
+            challanId
+        }
+    }
 }

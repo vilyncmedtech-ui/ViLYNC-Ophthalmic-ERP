@@ -7,10 +7,11 @@ import com.vilync.ophthalmicerp.data.entity.SampleIssueItemEntity
 import com.vilync.ophthalmicerp.data.entity.InventoryUnitEntity
 import com.vilync.ophthalmicerp.data.repository.SampleIssueRepository
 import com.vilync.ophthalmicerp.data.repository.InventoryRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentNumberingRepository
+import com.vilync.ophthalmicerp.data.repository.DocumentType
 import com.vilync.ophthalmicerp.feature.master.party.data.PartyRepository
 import com.vilync.ophthalmicerp.feature.master.party.model.PartyMaster
 import com.vilync.ophthalmicerp.feature.master.party.model.PartyType
-import com.vilync.ophthalmicerp.core.util.SerialFormatter
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -19,6 +20,7 @@ import java.util.*
 data class SampleIssueUiState(
     val sampleId: Long = 0,
     val sampleNumber: String = "",
+    val sampleNumberPreview: String = "",
     val issueDate: String = "",
     val expectedReturnDate: String = "",
     val financialYearStart: Int = 0,
@@ -55,7 +57,8 @@ class SampleIssueViewModel(
     private val repository: SampleIssueRepository,
     private val partyRepository: PartyRepository,
     private val inventoryRepository: InventoryRepository,
-    private val productRepository: com.vilync.ophthalmicerp.feature.master.product.data.ProductMasterRepository
+    private val productRepository: com.vilync.ophthalmicerp.feature.master.product.data.ProductMasterRepository,
+    private val numberingRepository: DocumentNumberingRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SampleIssueUiState(issueDate = today(), expectedReturnDate = in15Days()))
@@ -63,6 +66,22 @@ class SampleIssueViewModel(
 
     init {
         loadCustomers()
+        
+        // Initial Sample Number Preview
+        val fyStart = financialYearStart(_uiState.value.issueDate)
+        _uiState.update { it.copy(financialYearStart = fyStart) }
+        refreshSampleNumberPreview(fyStart)
+    }
+
+    private fun refreshSampleNumberPreview(fyStart: Int) {
+        viewModelScope.launch {
+            try {
+                val preview = numberingRepository.peekNextDocumentNumber(DocumentType.SAMPLE_ISSUE, fyStart)
+                _uiState.update { it.copy(sampleNumberPreview = preview) }
+            } catch (e: Exception) {
+                // Silently fail preview
+            }
+        }
     }
 
     private fun loadCustomers() {
@@ -121,7 +140,12 @@ class SampleIssueViewModel(
     }
 
     fun updateDate(date: String) {
-        _uiState.update { it.copy(issueDate = date, financialYearStart = financialYearStart(date)) }
+        val fyStart = financialYearStart(date)
+        _uiState.update { it.copy(issueDate = date, financialYearStart = fyStart) }
+        
+        if (!_uiState.value.isEditMode) {
+            refreshSampleNumberPreview(fyStart)
+        }
     }
 
     fun updateExpectedReturnDate(date: String) {
@@ -147,16 +171,10 @@ class SampleIssueViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isSearchingSerial = true) }
             try {
-                // Numeric-only search with automatic formatting
-                val numericPart = query.filter { it.isDigit() }
-                val formattedQuery = if (numericPart.isNotEmpty()) {
-                    // Try formatting with standard prefix if not already formatted
-                    if (!query.any { it.isLetter() }) {
-                         SerialFormatter.format("LMDE", numericPart)
-                    } else query
-                } else query
-
-                val matches = inventoryRepository.smartSearchInStockSerial(formattedQuery)
+                // Use the raw query to allow the repository's Smart Search 
+                // to perform standard suffix matching (e.g., "123" finds "LMDE000123").
+                val matches = inventoryRepository.smartSearchInStockSerial(query)
+                
                 if (matches.size == 1) {
                     addItem(matches.first())
                 } else {
