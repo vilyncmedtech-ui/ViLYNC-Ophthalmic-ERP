@@ -166,6 +166,13 @@ class OpeningStockViewModel(
         _uiState.update { it.copy(items = currentItems, isDirty = true) }
     }
 
+    fun addItems(items: List<OpeningStockUiItem>) {
+        if (items.isEmpty()) return
+        val currentItems = _uiState.value.items.toMutableList()
+        currentItems.addAll(items)
+        _uiState.update { it.copy(items = currentItems, isDirty = true) }
+    }
+
     fun removeItem(index: Int) {
         val currentItems = _uiState.value.items.toMutableList()
         if (index in currentItems.indices) {

@@ -1,5 +1,4 @@
-- [x] Implement text wrapping and multi-page support in `exportTrialBalance` (`FinancialStatementPdfExporter.kt`)
-- [x] Add `TOTAL` row at the end of Trial Balance report
-- [x] Adjust column widths to prevent overlap
-- [x] Verify build (`app:assembleDebug`)
-- [ ] Final report and request real-device verification
+- [ ] Add `addItems(List<OpeningStockUiItem>)` to `OpeningStockViewModel.kt` for atomic state updates.
+- [ ] Update `AppNavigation.kt` to use bulk update and robust ViewModel retrieval.
+- [ ] Verify build (`app:assembleDebug`).
+- [ ] Report final logic changes and results.

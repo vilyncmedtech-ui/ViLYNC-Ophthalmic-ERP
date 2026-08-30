@@ -1,50 +1,42 @@
-# Walkthrough - Trial Balance Print Layout Fixes
+# Walkthrough - Opening Stock UI Refinement (Direct Tiles)
 
-Trial Balance ke Print output mein missing `TOTAL` row aur long account names ke overlap issues ko fix kar diya gaya hai.
+Inventory screen ke "Opening Stock" section ko refine kiya gaya hai. Ab "Add Stock" aur "Opening Stock Register" directly usi screen par side-by-side tiles ke roop mein available hain, jisse intermediate hub screen ki zaroorat khatam ho gayi hai.
 
 ## Changes Made
 
-### 1. Missing TOTAL Row Fix
-- **File**: [FinancialStatementPdfExporter.kt](file:///C:/Users/dodo/Documents/androidprojects/ViLYNC_ERP/app/src/main/java/com/vilync/ophthalmicerp/feature/financialstatements/export/FinancialStatementPdfExporter.kt)
-- **Fix**: Trial Balance report ke end mein ek naya `TOTAL` section add kiya gaya hai jo screen par dikh rahe totals (Opening Dr/Cr, Period Dr/Cr, aur Closing Dr/Cr) ko print output mein display karta hai.
-- **Logic**: Yeh totals hamesha saari account rows print hone ke baad aakhiri page ke bottom par dikhai denge.
+### 1. Direct Tiles on Inventory Screen
+- **File**: `InventoryHomeScreen.kt`
+- Pehle ke single "Opening Stock Entry" tile ko replace karke do side-by-side tiles add kiye gaye hain:
+    - **Add Stock**: Symbol `+`, Blue color theme. Direct navigation to naya entry form.
+    - **Opening Stock Register**: Symbol `▤`, Navy color theme. Direct navigation to saved entries list.
+- **Layout Consistency**: Yeh naye tiles "Current Stock" aur "Stock Control" sections ke 2-column pattern ko exactly follow karte hain (94.dp height, 18.dp radius).
 
-### 2. Long Account Name Overlap Fix
-- **Refinement**: Account column ke liye text wrapping logic implement kiya gaya hai.
-- **Effect**: "LIFELINE MEDICAL DEVICES PRIVATE LIMITED" jaise bade account names ab next column (Opening) ko overlap karne ke bajaye multiple lines mein wrap ho jayenge.
-- **Row Expansion**: Jab text wrap hota hai, toh row ki height automatically expand ho jati hai taaki data overlap na ho.
-- **Column Separation**: Columns ke beech clear horizontal gap maintain kiya gaya hai.
+### 2. Navigation Streamlining
+- **File**: `AppNavigation.kt`
+- Intermediate "Opening Stock Category" route ko remove kar diya gaya hai.
+- `onOpeningStockClick` ab directly `opening_stock_entry/0` par map hai.
+- Naya `onOpeningStockRegisterClick` callback `opening_stock_register` route (entry list) par map kiya gaya hai.
 
-### 3. Multi-page Support & Optimization
-- **Pagination**: Report ab `PAGE_HEIGHT` ko respect karti hai. Agar entries zyada hain, toh system automatically naya page start karega aur headers ko repeat karega.
-- **Account Indentation**: Group hierarchy ke liye indentation (levels) ko print layout mein bhi preserve kiya gaya hai.
+### 3. Cleanup
+- `OpeningStockCategoryScreen.kt` file ko delete kar diya gaya hai kyunki ab saari functionality directly Inventory home se trigger ho rahi hai.
 
 ---
 
-## Technical Details
+## Technical Summary
 
-| Component | Logic Applied |
+| Feature | Implementation Detail |
 | :--- | :--- |
-| **Text Wrapping** | `wrapText` helper function using `paint.measureText`. |
-| **Pagination** | Check `y + rowHeight` against `PAGE_HEIGHT - MARGIN` before drawing each row. |
-| **Totals** | Mapped from `TrialBalanceReport` and stacked for better fit. |
-
----
-
-## Verification Results
-
-- **Trial Balance TOTAL Print Fix**: `PASS`
-- **Long Account Layout Fix**: `PASS`
-- **Multi-page Layout Validation**: `PASS`
-- **Accounting Values Preserved**: `PASS`
-- **Build**: `Build PASS` (gradle build assembled debug successfully).
+| **Section Layout** | Standard 2-column row arrangement. |
+| **Color Theme** | Green section header with coordinated blue/navy tiles. |
+| **State/Logic** | Unchanged. Direct navigation to existing validated screens. |
+| **Build Status** | `Build PASS`. |
 
 ---
 
 > [!IMPORTANT]
 > **Real Device Verification REQUIRED**
 >
-> Build pass ho chuka hai. Ab aapko **app ko real device par run karke verify karna hai**:
-> 1. Trial Balance print karein.
-> 2. Kya `TOTAL` row aakhiri page par visible hai?
-> 3. Kya "LIFELINE MEDICAL DEVICES PRIVATE LIMITED" account name bina overlap ke readable hai?
+> Ab aap app ko **real device/tablet par run karein** aur confirm karein:
+> 1.  Inventory screen par "Opening Stock" section mein do side-by-side tiles dikh rahe hain.
+> 2.  "Add Stock" click karne par `VMOS` series ka naya form open ho raha hai.
+> 3.  "Opening Stock Register" click karne par saved records ki list dikh rahi hai.

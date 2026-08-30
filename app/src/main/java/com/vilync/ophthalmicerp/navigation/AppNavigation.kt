@@ -616,7 +616,8 @@ fun AppNavigation() {
                 viewModel = salesViewModel,
                 onBack = { navController.popBackStack() },
                 onDashboard = { navController.navigate("dashboard") },
-                onSavedToDetail = { id -> navController.navigate("sales/invoice/$id") { popUpTo("sales/invoice/new") { inclusive = true } } }
+                onSavedToDetail = { id -> navController.navigate("sales/invoice/$id") { popUpTo("sales/invoice/new") { inclusive = true } } },
+                onNewCustomer = { navController.navigate("party_master/0") }
             )
         }
 
@@ -641,7 +642,8 @@ fun AppNavigation() {
                 viewModel = salesViewModel,
                 onBack = { navController.popBackStack() },
                 onDashboard = { navController.navigate("dashboard") },
-                onSavedToDetail = { id -> navController.navigate("sales/invoice/$id") { popUpTo("sales/invoice/edit/$id") { inclusive = true } } }
+                onSavedToDetail = { id -> navController.navigate("sales/invoice/$id") { popUpTo("sales/invoice/edit/$id") { inclusive = true } } },
+                onNewCustomer = { navController.navigate("party_master/0") }
             )
         }
 
@@ -1157,7 +1159,8 @@ fun AppNavigation() {
                 onDashboard = { navController.navigate("dashboard") },
                 onStockRegisterClick = { navController.navigate("stock_register") },
                 onSerialStockRegisterClick = { navController.navigate("serial_stock_register") },
-                onOpeningStockClick = { navController.navigate("opening_stock_list") },
+                onOpeningStockClick = { navController.navigate("opening_stock_entry/0") },
+                onOpeningStockRegisterClick = { navController.navigate("opening_stock_register") },
                 onStockAdjustmentClick = { navController.navigate("stock_adjustment") },
                 onStockReconciliationClick = { navController.navigate("stock_reconciliation") },
                 onAlertSettingsClick = { navController.navigate("inventory_alert_settings") }
@@ -1256,7 +1259,7 @@ fun AppNavigation() {
             SerialMovementHistoryScreen(viewModel = movementViewModel, onBack = { navController.popBackStack() })
         }
 
-        composable(route = "opening_stock_list") {
+        composable(route = "opening_stock_register") {
             val openingStockViewModel: OpeningStockViewModel = viewModel(factory = object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1294,11 +1297,12 @@ fun AppNavigation() {
         }
 
         composable(route = "add_opening_stock_item") {
-            val parentEntry = navController.previousBackStackEntry
-            val openingStockViewModel: OpeningStockViewModel = if (parentEntry != null) {
-                viewModel(viewModelStoreOwner = parentEntry)
-            } else {
-                viewModel(factory = object : ViewModelProvider.Factory {
+            val parentEntry = remember(it) {
+                navController.getBackStackEntry("opening_stock_entry/{stockId}")
+            }
+            val openingStockViewModel: OpeningStockViewModel = viewModel(
+                viewModelStoreOwner = parentEntry,
+                factory = object : ViewModelProvider.Factory {
                     @Suppress("UNCHECKED_CAST")
                     override fun <T : ViewModel> create(modelClass: Class<T>): T {
                         return OpeningStockViewModel(
@@ -1308,8 +1312,8 @@ fun AppNavigation() {
                             numberingRepository = numberingRepository
                         ) as T
                     }
-                })
-            }
+                }
+            )
             AddOpeningStockItemScreen(
                 productRepository = purchaseProductRepository, 
                 onAddItem = { items -> 

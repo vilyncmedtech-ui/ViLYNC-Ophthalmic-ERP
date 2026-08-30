@@ -1,6 +1,7 @@
 package com.vilync.ophthalmicerp.feature.sales.presentation
 
 import android.app.DatePickerDialog
+import android.content.res.Configuration
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,11 +60,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
@@ -88,12 +92,16 @@ fun SalesEntryScreen(
     viewModel: SalesViewModel,
     onBack: () -> Unit = {},
     onDashboard: () -> Unit = {},
-    onSavedToDetail: (Long) -> Unit = {}
+    onSavedToDetail: (Long) -> Unit = {},
+    onNewCustomer: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
-    var serialInput by remember { mutableStateOf("") }
-    var showDiscardDialog by remember { mutableStateOf(false) }
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    
+    var serialInput by rememberSaveable { mutableStateOf("") }
+    var showDiscardDialog by rememberSaveable { mutableStateOf(false) }
     var pendingExit by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     fun requestExit(action: () -> Unit) {
@@ -364,710 +372,33 @@ fun SalesEntryScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(VilyncPageBackground)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        CompactHeader(
-            isEditMode = uiState.isEditMode,
-            onBack = { requestExit(onBack) },
-            onDashboard = { requestExit(onDashboard) }
-        )
-
-        SectionCard(
-            title = "BILLING & INVOICE",
-            background = VilyncPastelBlue,
-            border = VilyncSoftBlueBorder
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                PartySearchField(
-                    label = "Customer / Hospital *",
-                    selectedParty = uiState.selectedCustomer,
-                    allParties = uiState.customers,
-                    onPartySelected = { viewModel.selectCustomer(it) },
-                    modifier = Modifier.weight(4.2f),
-                    readOnly = uiState.isEditMode,
-                    textStyle = TextStyle(fontSize = 16.sp)
-                )
-
-                InvoiceNoField(
-                    label = "Invoice No. *",
-                    prefix = if (uiState.isEditMode) "" else "Auto-generated:",
-                    number = if (uiState.isEditMode) uiState.invoiceNumber else uiState.nextInvoiceNumberPreview.ifBlank { "..." },
-                    modifier = Modifier.weight(2.9f)
-                )
-
-                ClickField(
-                    value = uiState.invoiceDate,
-                    label = "Invoice Date * 📅",
-                    onClick = {
-                        invoiceDatePicker.show()
-                    },
-                    modifier = Modifier.weight(2.9f)
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(4.2f)) {
-                    Text(
-                        "Shipping Address",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = VilyncSecondaryText,
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = uiState.sameAsBillTo,
-                            onCheckedChange = viewModel::updateSameAsBillTo
-                        )
-
-                        Text(
-                            "Same as Bill To",
-                            fontSize = 11.sp,
-                            color = VilyncNavy
-                        )
-                    }
-                }
-
-                CompactField(
-                    value = uiState.poNumber,
-                    onValueChange = {
-                        viewModel.updatePoNumber(
-                            it.uppercase(Locale.getDefault())
-                        )
-                    },
-                    label = "P.O. No.",
-                    modifier = Modifier.weight(2.9f),
-                    textStyle = TextStyle(fontSize = 16.sp)
-                )
-
-                ClickField(
-                    value = uiState.poDate,
-                    label = "P.O. Date 📅",
-                    onClick = {
-                        poDatePicker.show()
-                    },
-                    modifier = Modifier.weight(2.9f),
-                    textStyle = TextStyle(fontSize = 16.sp)
-                )
-            }
-
-            uiState.selectedCustomer?.let { customer ->
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-
-                    ReadOnlyField(
-                        value = uiState.billToLegalName
-                            .ifBlank { customer.partyName },
-                        label = "Bill To",
-                        modifier = Modifier.weight(1.4f)
-                    )
-
-                    ReadOnlyField(
-                        value = uiState.billToGstin.ifBlank { "-" },
-                        label = "Bill To GSTIN",
-                        modifier = Modifier.weight(1.05f)
-                    )
-
-                    ReadOnlyField(
-                        value = uiState.billToState.ifBlank { "-" },
-                        label = "Bill To State",
-                        modifier = Modifier.weight(.9f)
-                    )
-
-                    ReadOnlyField(
-                        value = uiState.placeOfSupplyState
-                            .ifBlank { uiState.billToState }
-                            .ifBlank { "-" },
-                        label = "Place of Supply",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                if (uiState.billToAddress.isNotBlank()) {
-                    Text(
-                        uiState.billToAddress,
-                        fontSize = 11.sp,
-                        color = VilyncSecondaryText
-                    )
-                }
-            }
-
-            if (!uiState.sameAsBillTo) {
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-
-                    CompactField(
-                        value = uiState.shipToName,
-                        onValueChange = viewModel::updateShipToName,
-                        label = "Ship To Name",
-                        modifier = Modifier.weight(1.4f)
-                    )
-
-                    CompactField(
-                        value = uiState.shipToGstin,
-                        onValueChange = viewModel::updateShipToGstin,
-                        label = "Ship To GSTIN",
-                        modifier = Modifier.weight(1.05f)
-                    )
-
-                    CompactField(
-                        value = uiState.shipToState,
-                        onValueChange = viewModel::updateShipToState,
-                        label = "Ship To State",
-                        modifier = Modifier.weight(.9f)
-                    )
-
-                    CompactField(
-                        value = uiState.placeOfSupplyState,
-                        onValueChange = viewModel::updatePlaceOfSupplyState,
-                        label = "Place of Supply",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                CompactField(
-                    value = uiState.shipToAddress,
-                    onValueChange = viewModel::updateShipToAddress,
-                    label = "Ship To Address",
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-
-        SectionCard(
-            title =
-                if (uiState.selectedCustomer != null) {
-                    "SETTLE CHALLAN — ${uiState.selectedCustomer?.legalName ?: uiState.billToLegalName}"
-                } else {
-                    "SETTLE CHALLAN"
-                },
-            background = VilyncPastelBlue,
-            border = VilyncSoftBlueBorder
-        ) {
-            if (uiState.selectedCustomer == null) {
-                Text(
-                    text = "Select Bill To customer to view pending challans.",
-                    fontSize = 12.sp,
-                    color = VilyncSecondaryText
-                )
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CompactField(
-                        value = uiState.challanSerialQuery,
-                        onValueChange = {
-                            viewModel.updateChallanSerialQuery(
-                                it.uppercase(Locale.getDefault())
-                            )
-                        },
-                        label = "Challan Serial / Unique ID",
-                        imeAction = ImeAction.Done,
-                        onDone = {
-                            viewModel.searchPendingChallanSerial()
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    Button(
-                        onClick = {
-                            viewModel.searchPendingChallanSerial()
-                        },
-                        enabled =
-                            !uiState.isChallanSerialSearching &&
-                                    !uiState.isChallanLoading,
-                        modifier = Modifier.height(52.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = VilyncPrimaryBlue
-                        )
-                    ) {
-                        Text(
-                            text =
-                                if (uiState.isChallanSerialSearching) {
-                                    "SEARCHING..."
-                                } else {
-                                    "FIND"
-                                },
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                when {
-                    uiState.isChallanLoading -> {
-                        Text(
-                            text = "Loading pending Challans...",
-                            fontSize = 12.sp,
-                            color = VilyncSecondaryText
-                        )
-                    }
-
-                    uiState.pendingChallanItems.isEmpty() -> {
-                        Text(
-                            text = "No pending Challan lenses for this Bill To customer.",
-                            fontSize = 12.sp,
-                            color = VilyncSecondaryText
-                        )
-                    }
-
-                    else -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "PENDING CHALLANS",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-
-                            Text(
-                                text = "${uiState.selectedChallanItemCount} selected",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp,
-                                color = VilyncPrimaryBlue
-                            )
-                        }
-
-                        if (uiState.selectedChallanItemIds.isNotEmpty()) {
-                            Button(
-                                onClick = {
-                                    viewModel.addSelectedChallanItemsToInvoice()
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF1B5E20) // Success Green
-                                ),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(
-                                    text = "ADD SELECTED TO INVOICE",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 330.dp)
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            uiState.pendingChallans.forEach { challan ->
-                                val challanItems =
-                                    uiState.pendingChallanItems.filter {
-                                        it.challanId == challan.id
-                                    }
-
-                                if (challanItems.isNotEmpty()) {
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(10.dp),
-                                        border = BorderStroke(
-                                            1.dp,
-                                            VilyncSoftBlueBorder
-                                        ),
-                                        colors = CardDefaults.cardColors(
-                                            containerColor = VilyncPageBackground
-                                        )
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(10.dp),
-                                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Text(
-                                                text = "${challan.challanNumber}  |  ${challan.challanDate}",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp
-                                            )
-
-                                            challanItems.forEach { item ->
-                                                val selected =
-                                                    item.id in uiState.selectedChallanItemIds
-
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .clickable {
-                                                            viewModel.toggleChallanItemForInvoice(
-                                                                item.id
-                                                            )
-                                                        },
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Checkbox(
-                                                        checked = selected,
-                                                        onCheckedChange = {
-                                                            viewModel.toggleChallanItemForInvoice(
-                                                                item.id
-                                                            )
-                                                        }
-                                                    )
-
-                                                    Column(
-                                                        modifier = Modifier.weight(1f)
-                                                    ) {
-                                                        Text(
-                                                            text = item.productName,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                            fontSize = 12.sp
-                                                        )
-
-                                                        Text(
-                                                            text = "${item.power.ifBlank { "-" }}  •  ${item.serialNumber}",
-                                                            fontSize = 12.sp
-                                                        )
-
-                                                        val trace =
-                                                            listOf(
-                                                                item.batchNumber
-                                                                    .takeIf { it.isNotBlank() }
-                                                                    ?.let { "Batch: $it" },
-                                                                item.expiryDate
-                                                                    .takeIf { it.isNotBlank() }
-                                                                    ?.let { "Expiry: $it" }
-                                                            )
-                                                                .filterNotNull()
-                                                                .joinToString("  •  ")
-
-                                                        if (trace.isNotBlank()) {
-                                                            Text(
-                                                                text = trace,
-                                                                fontSize = 10.sp,
-                                                                color = VilyncSecondaryText
-                                                            )
-                                                        }
-                                                    }
-
-                                                    if (selected) {
-                                                        Text(
-                                                            text = "SELECTED",
-                                                            fontWeight = FontWeight.Bold,
-                                                            fontSize = 10.sp,
-                                                            color = VilyncPrimaryBlue
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (uiState.selectedChallanItemIds.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                TextButton(
-                                    onClick = {
-                                        viewModel.clearSelectedChallanItems()
-                                    }
-                                ) {
-                                    Text("CLEAR SELECTION")
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = "Selection is temporary. Challan and Inventory are not permanently updated until the Sales Invoice is successfully saved.",
-                            fontSize = 11.sp,
-                            color = VilyncSecondaryText
-                        )
-                    }
-                }
-            }
-        }
-
-        SectionCard(
-            title = "PRODUCT ENTRY",
-            background = VilyncLavender,
-            border = VilyncLavenderBorder
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CompactField(
-                    value = serialInput,
-                    onValueChange = { serialInput = it.uppercase(Locale.getDefault()).trimStart() },
-                    label = "Serial / Unique ID *",
-                    imeAction = ImeAction.Done,
-                    onDone = { viewModel.selectSerialNumber(serialInput) },
-                    modifier = Modifier.weight(2.2f)
-                )
-                Button(
-                    onClick = { viewModel.selectSerialNumber(serialInput) },
-                    enabled = !uiState.isSmartSerialSearching,
-                    modifier = Modifier.height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = VilyncPrimaryBlue)
-                ) {
-                    Text(
-                        if (uiState.isSmartSerialSearching) "SEARCHING..." else "FIND",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Text(
-                    "or",
-                    fontSize = 11.sp,
-                    color = VilyncSecondaryText
-                )
-                ProductDropdown(
-                    selected = uiState.selectedProduct,
-                    products = uiState.products,
-                    onSelected = { product ->
-                        serialInput = ""
-                        viewModel.selectProduct(product.id)
-                    },
-                    modifier = Modifier.weight(1.65f)
-                )
-            }
-
-            uiState.selectedProduct?.let { product ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ReadOnlyField(product.productName, "Product", Modifier.weight(2f))
-                    ReadOnlyField(product.model.ifBlank { "-" }, "Model", Modifier.weight(1.15f))
-                    ReadOnlyField(uiState.selectedPower.ifBlank { "-" }, "Power", Modifier.weight(.8f))
-                    ReadOnlyField(uiState.currentQuantity.toString(), "Qty", Modifier.weight(.55f))
-                }
-
-                val unit = uiState.selectedSerialUnits.firstOrNull()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ReadOnlyField(unit?.serialNumber ?: "-", "Serial", Modifier.weight(1.45f))
-                    ReadOnlyField(unit?.batchNumber?.ifBlank { "-" } ?: "-", "Batch / Lot", Modifier.weight(1f))
-                    ReadOnlyField(unit?.expiryDate?.ifBlank { "-" } ?: "-", "Expiry", Modifier.weight(.9f))
-                    ReadOnlyField(product.hsnCode.ifBlank { "-" }, "HSN", Modifier.weight(.8f))
-                }
-
-                Text(
-                    listOf(product.category, product.brandName)
-                        .filter { it.isNotBlank() }
-                        .joinToString("  •  "),
-                    fontSize = 11.sp,
-                    color = VilyncSecondaryText
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CompactField(
-                        value = uiState.rate,
-                        onValueChange = viewModel::updateRate,
-                        label = "Rate ₹ *",
-                        keyboardType = KeyboardType.Decimal,
-                        modifier = Modifier.weight(1f)
-                    )
-                    CompactField(
-                        value = uiState.discountPercent,
-                        onValueChange = viewModel::updateDiscountPercent,
-                        label = "Disc %",
-                        keyboardType = KeyboardType.Decimal,
-                        modifier = Modifier.weight(.8f)
-                    )
-                    CompactField(
-                        value = uiState.gstPercent,
-                        onValueChange = viewModel::updateGstPercent,
-                        label = "GST %",
-                        keyboardType = KeyboardType.Decimal,
-                        modifier = Modifier.weight(.8f)
-                    )
-
-                    val preview = entryPreview(
-                        quantity = uiState.currentQuantity,
-                        rate = uiState.rate,
-                        discountPercent = uiState.discountPercent,
-                        gstPercent = uiState.gstPercent
-                    )
-                    ReadOnlyField(money(preview.first), "Taxable ₹", Modifier.weight(1f))
-                    ReadOnlyField(money(preview.second), "Amount ₹", Modifier.weight(1f))
-
-                    Button(
-                        onClick = {
-                            viewModel.addCurrentItem()
-                            serialInput = ""
-                        },
-                        enabled = uiState.currentQuantity > 0,
-                        modifier = Modifier.height(52.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = VilyncPrimaryBlue)
-                    ) {
-                        Text("+ ADD ITEM", fontWeight = FontWeight.Bold)
-                    }
-                }
-            } ?: Text(
-                "Enter/scan a Serial / Unique ID. Product, Power, Batch, Expiry, Rate and GST will fill automatically. Manual Product selection remains available as fallback.",
-                fontSize = 12.sp,
-                color = VilyncSecondaryText
+            CompactHeader(
+                isEditMode = uiState.isEditMode,
+                onBack = { requestExit(onBack) },
+                onDashboard = { requestExit(onDashboard) }
             )
         }
 
-        SectionCard(
-            title = "ITEMS (${uiState.items.size})",
-            background = VilyncItemsPastel,
-            border = VilyncItemsBorder
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (uiState.items.isEmpty()) {
-                Text("No sales items added yet.", fontSize = 12.sp, color = VilyncSecondaryText)
-            } else {
-                ItemsHeader()
-                uiState.items.forEach { item ->
-                    val serials = item.selectedUnits.joinToString(", ") { it.serialNumber }
-                    ItemDataRow(
-                        productName = item.productName,
-                        power = item.power,
-                        serials = serials,
-                        quantity = item.quantity,
-                        rate = item.rate,
-                        amount = item.totalAmount,
-                        onEdit = { viewModel.editItem(item.localId) },
-                        onRemove = { viewModel.removeItem(item.localId) }
-                    )
-                    Spacer(Modifier.height(4.dp))
-                }
-            }
+            BillingSection(uiState, viewModel, invoiceDatePicker, poDatePicker, isLandscape, onNewCustomer)
+            ChallanSection(uiState, viewModel)
+            ProductEntrySection(uiState, viewModel, serialInput, { serialInput = it }, isLandscape)
+            ItemsSection(uiState, viewModel)
+            BillSummarySection(uiState)
+            ActionSection(uiState, viewModel, isLandscape)
         }
-
-        SectionCard(
-            title = "BILL SUMMARY",
-            background = VilyncBillGreen,
-            border = VilyncGreenBorder
-        ) {
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-
-                SummaryBox(
-                    "Gross",
-                    uiState.subTotal,
-                    Modifier.weight(1f)
-                )
-
-                SummaryBox(
-                    "Discount",
-                    uiState.discountAmount,
-                    Modifier.weight(1f)
-                )
-
-                SummaryBox(
-                    "Taxable",
-                    uiState.taxableAmount,
-                    Modifier.weight(1f)
-                )
-
-                if (
-                    uiState.gstSupplyType.equals(
-                        other = "INTER_STATE",
-                        ignoreCase = true
-                    )
-                ) {
-
-                    SummaryBox(
-                        "IGST",
-                        uiState.igstAmount,
-                        Modifier.weight(1f)
-                    )
-
-                } else {
-
-                    SummaryBox(
-                        "CGST",
-                        uiState.cgstAmount,
-                        Modifier.weight(1f)
-                    )
-
-                    SummaryBox(
-                        "SGST",
-                        uiState.sgstAmount,
-                        Modifier.weight(1f)
-                    )
-                }
-
-                NetBox(
-                    uiState.totalAmount,
-                    Modifier.weight(1.45f)
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CompactField(
-                value = uiState.remarks,
-                onValueChange = viewModel::updateRemarks,
-                label = "Remarks",
-                imeAction = ImeAction.Done,
-                modifier = Modifier.weight(2.5f)
-            )
-
-            uiState.errorMessage?.let {
-                Text(
-                    it,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 12.sp,
-                    modifier = Modifier.weight(1.5f)
-                )
-            }
-
-            Button(
-                onClick = viewModel::saveSale,
-                enabled = !uiState.isSaving && !(uiState.isSaved && !uiState.isDirty),
-                modifier = Modifier
-                    .weight(1.25f)
-                    .height(52.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = VilyncPrimaryBlue)
-            ) {
-                Text(
-                    when {
-                        uiState.isSaving -> "SAVING…"
-                        uiState.isSaved && !uiState.isDirty -> "SAVED ✓"
-                        else -> if (uiState.isEditMode) "UPDATE INVOICE" else "SAVE INVOICE"
-                    },
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -1434,6 +765,636 @@ private fun buildAddress(customer: PartyMaster): String = listOf(
     customer.state,
     customer.pinCode
 ).filter { it.isNotBlank() }.joinToString(", ")
+
+@Composable
+private fun BillingSection(
+    uiState: SalesUiState,
+    viewModel: SalesViewModel,
+    invoiceDatePicker: DatePickerDialog,
+    poDatePicker: DatePickerDialog,
+    isLandscape: Boolean,
+    onNewCustomer: () -> Unit
+) {
+    SectionCard(
+        title = "BILLING & INVOICE",
+        background = VilyncPastelBlue,
+        border = VilyncSoftBlueBorder
+    ) {
+        if (isLandscape) {
+            // LANDSCAPE: Balanced full-width layout with stacked rows
+            PartySearchField(
+                label = "Customer / Hospital *",
+                selectedParty = uiState.selectedCustomer,
+                allParties = uiState.customers,
+                onPartySelected = { viewModel.selectCustomer(it) },
+                modifier = Modifier.fillMaxWidth(),
+                readOnly = uiState.isEditMode,
+                textStyle = TextStyle(fontSize = 15.sp),
+                onAddNewLabel = "+ New Customer",
+                onAddNew = onNewCustomer
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                InvoiceNoField(
+                    label = "Invoice No. *",
+                    prefix = if (uiState.isEditMode) "" else "Auto:",
+                    number = if (uiState.isEditMode) uiState.invoiceNumber else uiState.nextInvoiceNumberPreview.ifBlank { "..." },
+                    modifier = Modifier.weight(1f)
+                )
+
+                ClickField(
+                    value = uiState.invoiceDate,
+                    label = "Invoice Date * 📅",
+                    onClick = { invoiceDatePicker.show() },
+                    modifier = Modifier.weight(1f),
+                    textStyle = TextStyle(fontSize = 15.sp)
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1.2f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = uiState.sameAsBillTo,
+                        onCheckedChange = viewModel::updateSameAsBillTo
+                    )
+                    Text(
+                        "Same as Bill To Address",
+                        fontSize = 11.sp,
+                        color = VilyncNavy,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                CompactField(
+                    value = uiState.poNumber,
+                    onValueChange = { viewModel.updatePoNumber(it.uppercase(Locale.getDefault())) },
+                    label = "P.O. No.",
+                    modifier = Modifier.weight(1f),
+                    textStyle = TextStyle(fontSize = 15.sp)
+                )
+
+                ClickField(
+                    value = uiState.poDate,
+                    label = "P.O. Date 📅",
+                    onClick = { poDatePicker.show() },
+                    modifier = Modifier.weight(1f),
+                    textStyle = TextStyle(fontSize = 15.sp)
+                )
+            }
+        } else {
+            // PORTRAIT: Requested arrangement
+            PartySearchField(
+                label = "Customer / Hospital *",
+                selectedParty = uiState.selectedCustomer,
+                allParties = uiState.customers,
+                onPartySelected = { viewModel.selectCustomer(it) },
+                modifier = Modifier.fillMaxWidth(),
+                readOnly = uiState.isEditMode,
+                textStyle = TextStyle(fontSize = 14.sp),
+                onAddNewLabel = "+ New Customer",
+                onAddNew = onNewCustomer
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                InvoiceNoField(
+                    label = "Invoice No. *",
+                    prefix = if (uiState.isEditMode) "" else "Auto:",
+                    number = if (uiState.isEditMode) uiState.invoiceNumber else uiState.nextInvoiceNumberPreview.ifBlank { "..." },
+                    modifier = Modifier.weight(1f)
+                )
+
+                ClickField(
+                    value = uiState.invoiceDate,
+                    label = "Invoice Date * 📅",
+                    onClick = { invoiceDatePicker.show() },
+                    modifier = Modifier.weight(1f),
+                    textStyle = TextStyle(fontSize = 14.sp)
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CompactField(
+                    value = uiState.poNumber,
+                    onValueChange = { viewModel.updatePoNumber(it.uppercase(Locale.getDefault())) },
+                    label = "P.O. No.",
+                    modifier = Modifier.weight(1f),
+                    textStyle = TextStyle(fontSize = 14.sp)
+                )
+
+                ClickField(
+                    value = uiState.poDate,
+                    label = "P.O. Date 📅",
+                    onClick = { poDatePicker.show() },
+                    modifier = Modifier.weight(1f),
+                    textStyle = TextStyle(fontSize = 14.sp)
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = uiState.sameAsBillTo,
+                    onCheckedChange = viewModel::updateSameAsBillTo
+                )
+                Text(
+                    "Same as Bill To Address",
+                    fontSize = 11.sp,
+                    color = VilyncNavy,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        uiState.selectedCustomer?.let { customer ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ReadOnlyField(
+                    value = uiState.billToLegalName.ifBlank { customer.partyName },
+                    label = "Bill To",
+                    modifier = Modifier.weight(1.4f)
+                )
+                ReadOnlyField(
+                    value = uiState.billToGstin.ifBlank { "-" },
+                    label = "Bill To GSTIN",
+                    modifier = Modifier.weight(1.05f)
+                )
+                ReadOnlyField(
+                    value = uiState.billToState.ifBlank { "-" },
+                    label = "Bill To State",
+                    modifier = Modifier.weight(.9f)
+                )
+                ReadOnlyField(
+                    value = uiState.placeOfSupplyState.ifBlank { uiState.billToState }.ifBlank { "-" },
+                    label = "Place of Supply",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            if (uiState.billToAddress.isNotBlank()) {
+                Text(
+                    uiState.billToAddress,
+                    fontSize = 11.sp,
+                    color = VilyncSecondaryText
+                )
+            }
+        }
+
+        if (!uiState.sameAsBillTo) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CompactField(
+                    value = uiState.shipToName,
+                    onValueChange = viewModel::updateShipToName,
+                    label = "Ship To Name",
+                    modifier = Modifier.weight(1.4f)
+                )
+                CompactField(
+                    value = uiState.shipToGstin,
+                    onValueChange = viewModel::updateShipToGstin,
+                    label = "Ship To GSTIN",
+                    modifier = Modifier.weight(1.05f)
+                )
+                CompactField(
+                    value = uiState.shipToState,
+                    onValueChange = viewModel::updateShipToState,
+                    label = "Ship To State",
+                    modifier = Modifier.weight(.9f)
+                )
+                CompactField(
+                    value = uiState.placeOfSupplyState,
+                    onValueChange = viewModel::updatePlaceOfSupplyState,
+                    label = "Place of Supply",
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            CompactField(
+                value = uiState.shipToAddress,
+                onValueChange = viewModel::updateShipToAddress,
+                label = "Ship To Address",
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChallanSection(
+    uiState: SalesUiState,
+    viewModel: SalesViewModel
+) {
+    SectionCard(
+        title = if (uiState.selectedCustomer != null) {
+            "SETTLE CHALLAN — ${uiState.selectedCustomer?.legalName ?: uiState.billToLegalName}"
+        } else {
+            "SETTLE CHALLAN"
+        },
+        background = VilyncPastelBlue,
+        border = VilyncSoftBlueBorder
+    ) {
+        if (uiState.selectedCustomer == null) {
+            Text(
+                text = "Select Bill To customer to view pending challans.",
+                fontSize = 12.sp,
+                color = VilyncSecondaryText
+            )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CompactField(
+                    value = uiState.challanSerialQuery,
+                    onValueChange = { viewModel.updateChallanSerialQuery(it.uppercase(Locale.getDefault())) },
+                    label = "Challan Serial / Unique ID",
+                    imeAction = ImeAction.Done,
+                    onDone = { viewModel.searchPendingChallanSerial() },
+                    modifier = Modifier.weight(1f)
+                )
+
+                Button(
+                    onClick = { viewModel.searchPendingChallanSerial() },
+                    enabled = !uiState.isChallanSerialSearching && !uiState.isChallanLoading,
+                    modifier = Modifier.height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = VilyncPrimaryBlue)
+                ) {
+                    Text(
+                        text = if (uiState.isChallanSerialSearching) "SEARCHING..." else "FIND",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            when {
+                uiState.isChallanLoading -> {
+                    Text("Loading pending Challans...", fontSize = 12.sp, color = VilyncSecondaryText)
+                }
+                uiState.pendingChallanItems.isEmpty() -> {
+                    Text("No pending Challan lenses for this Bill To customer.", fontSize = 12.sp, color = VilyncSecondaryText)
+                }
+                else -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("PENDING CHALLANS", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("${uiState.selectedChallanItemCount} selected", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = VilyncPrimaryBlue)
+                    }
+
+                    if (uiState.selectedChallanItemIds.isNotEmpty()) {
+                        Button(
+                            onClick = { viewModel.addSelectedChallanItemsToInvoice() },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("ADD SELECTED TO INVOICE", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 330.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        uiState.pendingChallans.forEach { challan ->
+                            val challanItems = uiState.pendingChallanItems.filter { it.challanId == challan.id }
+                            if (challanItems.isNotEmpty()) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, VilyncSoftBlueBorder),
+                                    colors = CardDefaults.cardColors(containerColor = VilyncPageBackground)
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("${challan.challanNumber}  |  ${challan.challanDate}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        challanItems.forEach { item ->
+                                            val selected = item.id in uiState.selectedChallanItemIds
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().clickable { viewModel.toggleChallanItemForInvoice(item.id) },
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Checkbox(checked = selected, onCheckedChange = { viewModel.toggleChallanItemForInvoice(item.id) })
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(item.productName, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                                    Text("${item.power.ifBlank { "-" }}  •  ${item.serialNumber}", fontSize = 12.sp)
+                                                    val trace = listOf(item.batchNumber.takeIf { it.isNotBlank() }?.let { "Batch: $it" }, item.expiryDate.takeIf { it.isNotBlank() }?.let { "Expiry: $it" }).filterNotNull().joinToString("  •  ")
+                                                    if (trace.isNotBlank()) {
+                                                        Text(trace, fontSize = 10.sp, color = VilyncSecondaryText)
+                                                    }
+                                                }
+                                                if (selected) {
+                                                    Text("SELECTED", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = VilyncPrimaryBlue)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (uiState.selectedChallanItemIds.isNotEmpty()) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { viewModel.clearSelectedChallanItems() }) { Text("CLEAR SELECTION") }
+                        }
+                    }
+                    Text("Selection is temporary. Challan and Inventory are not permanently updated until the Sales Invoice is successfully saved.", fontSize = 11.sp, color = VilyncSecondaryText)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductEntrySection(
+    uiState: SalesUiState,
+    viewModel: SalesViewModel,
+    serialInput: String,
+    onSerialInputChange: (String) -> Unit,
+    isLandscape: Boolean
+) {
+    SectionCard(
+        title = "PRODUCT ENTRY",
+        background = VilyncLavender,
+        border = VilyncLavenderBorder
+    ) {
+        if (isLandscape) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CompactField(
+                    value = serialInput,
+                    onValueChange = onSerialInputChange,
+                    label = "Serial / Unique ID *",
+                    imeAction = ImeAction.Done,
+                    onDone = { viewModel.selectSerialNumber(serialInput) },
+                    modifier = Modifier.weight(1.5f),
+                    textStyle = TextStyle(fontSize = 14.sp)
+                )
+                Button(
+                    onClick = { viewModel.selectSerialNumber(serialInput) },
+                    enabled = !uiState.isSmartSerialSearching,
+                    modifier = Modifier.height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = VilyncPrimaryBlue),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(if (uiState.isSmartSerialSearching) "..." else "FIND", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                Text("or", fontSize = 11.sp, color = VilyncSecondaryText)
+                ProductDropdown(
+                    selected = uiState.selectedProduct,
+                    products = uiState.products,
+                    onSelected = { viewModel.selectProduct(it.id) },
+                    modifier = Modifier.weight(2f)
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CompactField(
+                    value = serialInput,
+                    onValueChange = onSerialInputChange,
+                    label = "Serial / Unique ID *",
+                    imeAction = ImeAction.Done,
+                    onDone = { viewModel.selectSerialNumber(serialInput) },
+                    modifier = Modifier.weight(2.2f),
+                    textStyle = TextStyle(fontSize = 14.sp)
+                )
+                Button(
+                    onClick = { viewModel.selectSerialNumber(serialInput) },
+                    enabled = !uiState.isSmartSerialSearching,
+                    modifier = Modifier.height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = VilyncPrimaryBlue),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(if (uiState.isSmartSerialSearching) "..." else "FIND", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                Text("or", fontSize = 11.sp, color = VilyncSecondaryText)
+                ProductDropdown(
+                    selected = uiState.selectedProduct,
+                    products = uiState.products,
+                    onSelected = { viewModel.selectProduct(it.id) },
+                    modifier = Modifier.weight(1.65f)
+                )
+            }
+        }
+
+        uiState.selectedProduct?.let { product ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReadOnlyField(product.productName, "Product", Modifier.weight(if (isLandscape) 1.5f else 2f))
+                ReadOnlyField(product.model.ifBlank { "-" }, "Model", Modifier.weight(1.15f))
+                ReadOnlyField(uiState.selectedPower.ifBlank { "-" }, "Power", Modifier.weight(.8f))
+                ReadOnlyField(uiState.currentQuantity.toString(), "Qty", Modifier.weight(.55f))
+            }
+
+            val unit = uiState.selectedSerialUnits.firstOrNull()
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReadOnlyField(unit?.serialNumber ?: "-", "Serial", Modifier.weight(1.45f))
+                ReadOnlyField(unit?.batchNumber?.ifBlank { "-" } ?: "-", "Batch / Lot", Modifier.weight(1f))
+                ReadOnlyField(unit?.expiryDate?.ifBlank { "-" } ?: "-", "Expiry", Modifier.weight(.9f))
+                ReadOnlyField(product.hsnCode.ifBlank { "-" }, "HSN", Modifier.weight(.8f))
+            }
+
+            Text(
+                listOf(product.category, product.brandName).filter { it.isNotBlank() }.joinToString("  •  "),
+                fontSize = 11.sp, color = VilyncSecondaryText
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CompactField(value = uiState.rate, onValueChange = viewModel::updateRate, label = "Rate ₹ *", keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
+                CompactField(value = uiState.discountPercent, onValueChange = viewModel::updateDiscountPercent, label = "Disc %", keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(.8f))
+                CompactField(value = uiState.gstPercent, onValueChange = viewModel::updateGstPercent, label = "GST %", keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(.8f))
+
+                val preview = entryPreview(uiState.currentQuantity, uiState.rate, uiState.discountPercent, uiState.gstPercent)
+                ReadOnlyField(money(preview.first), "Taxable ₹", Modifier.weight(1f))
+                ReadOnlyField(money(preview.second), "Amount ₹", Modifier.weight(1f))
+
+                Button(
+                    onClick = { viewModel.addCurrentItem() },
+                    enabled = uiState.currentQuantity > 0,
+                    modifier = Modifier.height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = VilyncPrimaryBlue)
+                ) {
+                    Text("+ ADD ITEM", fontWeight = FontWeight.Bold)
+                }
+            }
+        } ?: Text("Enter/scan a Serial / Unique ID. Product, Power, Batch, Expiry, Rate and GST will fill automatically.", fontSize = 12.sp, color = VilyncSecondaryText)
+    }
+}
+
+@Composable
+private fun ItemsSection(
+    uiState: SalesUiState,
+    viewModel: SalesViewModel
+) {
+    SectionCard(
+        title = "ITEMS (${uiState.items.size})",
+        background = VilyncItemsPastel,
+        border = VilyncItemsBorder
+    ) {
+        if (uiState.items.isEmpty()) {
+            Text("No sales items added yet.", fontSize = 12.sp, color = VilyncSecondaryText)
+        } else {
+            ItemsHeader()
+            uiState.items.forEach { item ->
+                val serials = item.selectedUnits.joinToString(", ") { it.serialNumber }
+                ItemDataRow(
+                    productName = item.productName,
+                    power = item.power,
+                    serials = serials,
+                    quantity = item.quantity,
+                    rate = item.rate,
+                    amount = item.totalAmount,
+                    onEdit = { viewModel.editItem(item.localId) },
+                    onRemove = { viewModel.removeItem(item.localId) }
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun BillSummarySection(
+    uiState: SalesUiState
+) {
+    SectionCard(
+        title = "BILL SUMMARY",
+        background = VilyncBillGreen,
+        border = VilyncGreenBorder
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SummaryBox("Gross", uiState.subTotal, Modifier.weight(1f))
+            SummaryBox("Discount", uiState.discountAmount, Modifier.weight(1f))
+            SummaryBox("Taxable", uiState.taxableAmount, Modifier.weight(1f))
+
+            if (uiState.gstSupplyType.equals("INTER_STATE", ignoreCase = true)) {
+                SummaryBox("IGST", uiState.igstAmount, Modifier.weight(1f))
+            } else {
+                SummaryBox("CGST", uiState.cgstAmount, Modifier.weight(1f))
+                SummaryBox("SGST", uiState.sgstAmount, Modifier.weight(1f))
+            }
+            NetBox(uiState.totalAmount, Modifier.weight(1.45f))
+        }
+    }
+}
+
+@Composable
+private fun ActionSection(
+    uiState: SalesUiState,
+    viewModel: SalesViewModel,
+    isLandscape: Boolean
+) {
+    if (isLandscape) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CompactField(
+                value = uiState.remarks,
+                onValueChange = viewModel::updateRemarks,
+                label = "Remarks",
+                imeAction = ImeAction.Done,
+                modifier = Modifier.weight(2f)
+            )
+
+            uiState.errorMessage?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.weight(1f))
+            }
+
+            Button(
+                onClick = viewModel::saveSale,
+                enabled = !uiState.isSaving && !(uiState.isSaved && !uiState.isDirty),
+                modifier = Modifier.weight(1.5f).height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = VilyncPrimaryBlue),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    when {
+                        uiState.isSaving -> "SAVING…"
+                        uiState.isSaved && !uiState.isDirty -> "SAVED ✓"
+                        else -> if (uiState.isEditMode) "UPDATE INVOICE" else "SAVE INVOICE"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CompactField(
+                value = uiState.remarks,
+                onValueChange = viewModel::updateRemarks,
+                label = "Remarks",
+                imeAction = ImeAction.Done,
+                modifier = Modifier.weight(2.5f)
+            )
+
+            uiState.errorMessage?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, modifier = Modifier.weight(1.5f))
+            }
+
+            Button(
+                onClick = viewModel::saveSale,
+                enabled = !uiState.isSaving && !(uiState.isSaved && !uiState.isDirty),
+                modifier = Modifier.weight(1.25f).height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = VilyncPrimaryBlue)
+            ) {
+                Text(
+                    when {
+                        uiState.isSaving -> "SAVING…"
+                        uiState.isSaved && !uiState.isDirty -> "SAVED ✓"
+                        else -> if (uiState.isEditMode) "UPDATE INVOICE" else "SAVE INVOICE"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
 
 private fun money(value: Double): String = String.format(Locale.getDefault(), "%.2f", value)
 

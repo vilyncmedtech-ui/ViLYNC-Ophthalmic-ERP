@@ -33,6 +33,7 @@ fun InventoryHomeScreen(
     onStockRegisterClick: () -> Unit = {},
     onSerialStockRegisterClick: () -> Unit = {},
     onOpeningStockClick: () -> Unit = {},
+    onOpeningStockRegisterClick: () -> Unit = {},
     onStockAdjustmentClick: () -> Unit = {},
     onStockReconciliationClick: () -> Unit = {},
     onAlertSettingsClick: () -> Unit = {}
@@ -238,19 +239,30 @@ fun InventoryHomeScreen(
                 modifier = Modifier.height(8.dp)
             )
 
-            InventoryMenuCard(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                icon = "+",
-                title = "Opening Stock Entry",
-                subtitle =
-                    "Record controlled opening inventory",
-                backgroundColor =
-                    Color(0xFFDFF6E8),
-                iconColor =
-                    Color(0xFF14945A),
-                onClick =
-                    onOpeningStockClick
-            )
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                InventoryMenuCard(
+                    modifier = Modifier.weight(1f),
+                    icon = "+",
+                    title = "Add Stock",
+                    subtitle = "Record new opening inventory",
+                    backgroundColor = Color(0xFFDFF6E8),
+                    iconColor = Color(0xFF14945A),
+                    onClick = onOpeningStockClick
+                )
+
+                InventoryMenuCard(
+                    modifier = Modifier.weight(1f),
+                    icon = "▤",
+                    title = "Stock Register",
+                    subtitle = "View and manage entries",
+                    backgroundColor = Color(0xFFE7F0FF),
+                    iconColor = Color(0xFF3455A4),
+                    onClick = onOpeningStockRegisterClick
+                )
+            }
 
             Spacer(
                 modifier = Modifier.height(18.dp)

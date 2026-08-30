@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -28,7 +29,9 @@ fun PartySearchField(
     onPartySelected: (PartyMaster) -> Unit,
     modifier: Modifier = Modifier,
     readOnly: Boolean = false,
-    textStyle: TextStyle = LocalTextStyle.current
+    textStyle: TextStyle = LocalTextStyle.current,
+    onAddNewLabel: String = "+ New Party",
+    onAddNew: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf(selectedParty?.partyName ?: "") }
@@ -76,12 +79,32 @@ fun PartySearchField(
             }.take(10)
         }
 
-        if (expanded && filtered.isNotEmpty() && !readOnly) {
+        if (expanded && (filtered.isNotEmpty() || onAddNew != null) && !readOnly) {
             DropdownMenu(
                 expanded = true,
                 onDismissRequest = { expanded = false },
                 properties = PopupProperties(focusable = false)
             ) {
+                if (onAddNew != null) {
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = onAddNewLabel,
+                                    color = Color(0xFF476EA8),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        },
+                        onClick = {
+                            expanded = false
+                            onAddNew()
+                        }
+                    )
+                    HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray)
+                }
+
                 filtered.forEach { party ->
                     DropdownMenuItem(
                         text = {
